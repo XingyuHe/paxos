@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"fmt"
 	"log"
-	"net/rpc"
 )
 
 type WorkerInfo struct {
@@ -87,122 +86,80 @@ Actual design:
 
 func (mr *MapReduce) RunMaster() *list.List {
 
-	id := 0
 	log.Printf("[RunMaster]: filename %s", mr.file)
-
-	mapJobNumber := mr.nMap - 1 
-	mapJobNumberSem := make(chan int, 1)
-
-	reduceJobNumber := mr.nReduce - 1 
-	reduceJobNumberSem := make(chan int, 1)
-
-	// wait for map to finish
-	mapCall := make([]chan *rpc.Call, mr.nMap)
-	for i := range mapCall {
-		mapCall[i] = make(chan *rpc.Call, 10)
-	}
-
-	mapFinish := make(chan int)
-
-	go func() {
-		for jobIdx := 0; jobIdx < mr.nMap; jobIdx++ {
-			<- mapCall[jobIdx]
-		}
-		mapFinish <- 1
-	}()
-
-
-	// wait for reduce to finish
-	reduceCall := make([]chan *rpc.Call, mr.nMap)
-	for i := range reduceCall {
-		reduceCall[i] = make(chan *rpc.Call, 10)
-	}
-
-	reduceFinish := make(chan int)
-
-	go func() {
-		for jobIdx := 0; jobIdx < mr.nMap; jobIdx++ {
-			<- reduceCall[jobIdx]
-		}
-		reduceFinish <- 1
-	}()
-
-	for {
-		// Your code here
-		worker_name := <- mr.registerChannel
-		log.Printf("[RunMaster]: receive signal from worker %s", worker_name)
-
-		// initialize worker state
-		mr.Workers[worker_name] = &WorkerInfo{address: worker_name, 
-												id: id}
-
-		client, _ := rpc.Dial("unix", worker_name)
-		// error(err) // TODO: not sure if this line is necessary
-		defer client.Close()
-
-
-		log.Printf("[RunMaster]: successfully dial worker server %s", worker_name)
+	mapFinish := make(chan int, mr.nMap)
+	reduceFinish := make(chan int, mr.nReduce)
 		
-		go func() {
-			// map
+	// map
+	for jobIdx := 0; jobIdx < mr.nMap; jobIdx++{
 
-			for {
+		worker_name := <- mr.registerChannel
+		log.Printf("[RunMaster]: worker name %s", worker_name)
+		log.Printf("[RunMaster]: mapJobNumber %d", jobIdx)
 
-				mapJobNumberSem <- 1
+		go func(jobIdx int) {
+			var reply DoJobReply
+			log.Printf("[RunMaster]: Go Routine: mapJobNumber %d", jobIdx)
+			args := &DoJobArgs{
+				File: mr.file,
+				Operation: "Map",
+				JobNumber: jobIdx,
+				NumOtherPhase: mr.nReduce,
+			} // TODO: need to calculate number of other jobs
+			log.Printf("[RunMaster]: args JobNumber %d\n", args.JobNumber)
 
-				log.Printf("[RunMaster]: map loop: mapJobNumber %d", mapJobNumber)
-				
-				if (mapJobNumber < 0) {
-					<- mapJobNumberSem
-					log.Printf("[RunMaster]: map loop: no more map jobs left")
-					break
-				}
-				currJobNumber := mapJobNumber
-				mapJobNumber--
-				<- mapJobNumberSem
-
-				var reply DoJobReply
-				args := &DoJobArgs{
-					File: mr.file,
-					Operation: "Map",
-					JobNumber: currJobNumber,
-					NumOtherPhase: mr.nReduce,
-				} // TODO: need to calculate number of other jobs
-
-				mapCall = append(mapCall, make(chan *rpc.Call, 10))
-				client.Go("Worker.DoJob", args, &reply, mapCall[len(mapCall) - 1])
+			ok := call(worker_name, "Worker.DoJob", args, &reply)
+			if !ok {
+				fmt.Printf("[RunMaster] Register: RPC %s register error\n", worker_name)
 			}
+			log.Printf("[RunMaster]: Finish mapJobNumber %d\n", jobIdx)
+			mapFinish <- 1
+			mr.registerChannel <- worker_name
 
-			<- mapFinish
-			// reduce
-			for {
-
-				reduceJobNumberSem <- 1
-				if (reduceJobNumber < 0) {
-					<- reduceJobNumberSem
-					break
-				}
-				currJobNumber := reduceJobNumber
-				reduceJobNumber--
-				<- reduceJobNumberSem
-
-				var reply DoJobReply
-				args := &DoJobArgs{
-					File: mr.file,
-					Operation: "Reduce",
-					JobNumber: currJobNumber,
-					NumOtherPhase: mr.nMap,
-				} // TODO: need to calculate number of other jobs
-				client.Go("Worker.DoJob", args, &reply, reduceCall[currJobNumber])
-			}
-
-		}()
-
-
-
+		}(jobIdx)
 	}
-	<- reduceFinish
-	mr.DoneChannel <- true
-	return mr.KillWorkers()
 
+	finishCnt := 0
+	log.Printf("[RunMaster]: nMap %d\n", mr.nMap)
+	for i := 0; i < mr.nMap; i++ {
+		finishCnt += <- mapFinish
+		log.Printf("[RunMaster]: map finishCnt %d\n", finishCnt)
+	}
+	close(mapFinish)
+
+
+	for jobIdx := 0; jobIdx < mr.nReduce; jobIdx++{
+
+		worker_name := <- mr.registerChannel
+		log.Printf("[RunMaster]: worker name %s", worker_name)
+		log.Printf("[RunMaster]: reduceJobNumber %d", jobIdx)
+
+		go func(jobIdx int) {
+			var reply DoJobReply
+			args := &DoJobArgs{
+				File: mr.file,
+				Operation: "Reduce",
+				JobNumber: jobIdx,
+				NumOtherPhase: mr.nMap,
+			} // TODO: need to calculate number of other jobs
+
+			ok := call(worker_name, "Worker.DoJob", args, &reply)
+			if !ok {
+				fmt.Printf("[RunMaster] Register: RPC %s register error\n", worker_name)
+			}
+			log.Printf("[RunMaster]: Finish reduceJobNumber %d\n", jobIdx)
+			reduceFinish <- 1
+			mr.registerChannel <- worker_name
+
+		}(jobIdx)
+	}
+
+	finishCnt = 0
+	log.Printf("[RunMaster]: nReduce %d\n", mr.nReduce)
+	for i := 0; i < mr.nReduce; i++ {
+		finishCnt += <- reduceFinish 
+		log.Printf("[RunMaster]: reduce finishCnt %d\n", finishCnt)
+	}
+	close(reduceFinish)
+	return mr.KillWorkers()
 }
