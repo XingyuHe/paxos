@@ -33,6 +33,51 @@ func port(suffix string) string {
   return s
 }
 
+/* 
+
+Test1 structure
+
+1. init a viewServer, init 3 server
+	1. designate a viewServer
+2. check if there is primary
+	1. call rpc ViewServer.Get TODO: implement this 
+	(get and ping shares the same underlying function,
+	ping changes the state of viewServer)
+
+CHECK FOR 1 primary server
+for loop: Ping viewServer DeadPings * 2 times to check if the 
+primary of the view is the same as server's me
+	1. ck1 call ping(0) 
+	2. call rpc ViewServer.Ping TODO implement this
+	3. know the primary of the returned view
+2. check if the server's ViewServer.Get to see if 
+	1. view's primary = server.me 
+	2. view's backup = "" (no backup, since there is no other server)
+	3. view's viewnum = 1
+	4. server's primary  = server.me 
+
+
+CHECK FOR 1 back-up server
+
+the way to construct 1 back-up:
+1. ck1.Ping(1) aka: server 1's latest view is 1
+2. ck2.Ping(0) aka: server 2 just went live
+
+
+
+CHECK FOR primary failing
+1. primary fails, then backup should take over. 
+2. the returned view should be the updated view with new primary and 1 + viewNum
+
+
+
+
+
+
+
+
+*/
+
 func Test1(t *testing.T) {
   runtime.GOMAXPROCS(4)
 
@@ -52,6 +97,7 @@ func Test1(t *testing.T) {
   // very first primary
   fmt.Printf("Test: First primary ...\n")
 
+  // QUESTION: why do ck1 ping the viewServer 2 * DeadPings time? 
   for i := 0; i < DeadPings * 2; i++ {
     view, _ := ck1.Ping(0)
     if view.Primary == ck1.me {
@@ -189,7 +235,9 @@ func Test1(t *testing.T) {
       }
       time.Sleep(PingInterval)
     }
+		fmt.Printf("Test: Viewserver waits for primary to ack view checking...\n")
     check(t, ck1, ck3.me, ck1.me, vx.Viewnum+1)
+		fmt.Printf("Test: Viewserver waits for primary to ack view checking done...\n")
     vy, _ := ck1.Get()
     // ck3 is the primary, but it never acked.
     // let ck3 die. check that ck1 is not promoted.
@@ -200,9 +248,11 @@ func Test1(t *testing.T) {
       }
       time.Sleep(PingInterval)
     }
+		fmt.Printf("Test: Viewserver waits for primary to ack view 2nd checking...\n")
     check(t, ck2, ck3.me, ck1.me, vy.Viewnum)
+		fmt.Printf("Test: Viewserver waits for primary to ack view 2nd checking done...\n")
   }
-  fmt.Printf("  ... Passed\n")
+  fmt.Printf("Passed:  Viewserver waits for primary to ack view ...\n")
 
   // if old servers die, check that a new (uninitialized) server
   // cannot take over.

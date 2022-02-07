@@ -12,6 +12,7 @@ type Clerk struct {
   server string  // viewservice's host:port
 }
 
+// initialize client state
 func MakeClerk(me string, server string) *Clerk {
   ck := new(Clerk)
   ck.me = me
