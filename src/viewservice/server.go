@@ -8,6 +8,13 @@ import "time"
 import "sync"
 import "fmt"
 import "os"
+/* 
+
+TODO: 
+1. Refactor to code to only keep track of acked, return, and current
+
+
+*/
 
 type ViewServer struct {
   mu sync.Mutex
@@ -40,52 +47,56 @@ func (vs *ViewServer) popIdleServer() string {
 	return ""
 }
 
-func (vs *ViewServer) getCurrBackup() string {
-	return vs.views.getCurrView().Backup
+func (vs *ViewServer) getNextBackup() string {
+	return vs.views.getNextView().Backup
 }
 
-func (vs *ViewServer) getCurrPrimary() string {
-	return vs.views.getCurrView().Primary
+func (vs *ViewServer) getNextPrimary() string {
+	return vs.views.getNextView().Primary
 }
 
-func (vs *ViewServer) getReturnView() *View {
+func (vs *ViewServer) getLastViewToPrimary() *View {
 	return vs.views.getReturnView()
 }
 
 // this function assumes that vs's primary server crashed
 func (vs *ViewServer) handlePrimaryCrash(crashedArgs *PingArgs) {
-	log.Printf("handlePrimaryCrash")
-	if vs.getCurrBackup() == "" {
-		vs.views.emplaceCurrView(crashedArgs.Me, "")
+	// log.Printf("handlePrimaryCrash")
+	if vs.getNextBackup() == "" {
+		if len(vs.serverStatus) == 0 {
+			vs.views.emplaceNextView(crashedArgs.Me, "")
+		} else { // else the service fail
+			vs.dead = true
+		} 
 	} else {
 		newBackup := vs.popIdleServer()
 		if newBackup == "" {
-			vs.views.emplaceCurrView(vs.getCurrBackup(), crashedArgs.Me)
+			vs.views.emplaceNextView(vs.getNextBackup(), crashedArgs.Me)
 		} else {
-			vs.views.emplaceCurrView(vs.getCurrBackup(), newBackup)
+			vs.views.emplaceNextView(vs.getNextBackup(), newBackup)
 		}
 	}
 }
 
 func (vs *ViewServer) handleBackupCrash(crashedArgs *PingArgs) {
 	// TODO
-	log.Printf("handleBackupCrash")
+	// log.Printf("handleBackupCrash")
 	newBackup := vs.popIdleServer()
 	if newBackup == "" {
-		vs.views.emplaceCurrView(vs.getCurrPrimary(), crashedArgs.Me)
+		vs.views.emplaceNextView(vs.getNextPrimary(), crashedArgs.Me)
 	} else {
-		vs.views.emplaceCurrView(vs.getCurrPrimary(), newBackup)
+		vs.views.emplaceNextView(vs.getNextPrimary(), newBackup)
 	}
 		
 }
 
 func (vs *ViewServer) updatePing(args *PingArgs) {
-	log.Printf("updatePing")
+	// log.Printf("updatePing")
 	vs.serverStatus[args.Me] = time.Now()
 }
 
 func (vs *ViewServer) updateIdleServers(args *PingArgs) {
-	log.Printf("updateIdleServers")
+	// log.Printf("updateIdleServers")
 	vs.idleServers[args.Me] = true
 }
 
@@ -96,38 +107,42 @@ func (vs *ViewServer) updateIdleServers(args *PingArgs) {
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
   // Your code here.
-  log.Printf("[Ping: start]")
-	args.Printf()
-	vs.views.Printf()
+  // log.Printf("[Ping: start]")
+	// args.Printf()
+	// vs.views.Printf()
+
+	if (args.Viewnum > vs.getLastViewToPrimary().Viewnum) {
+		return fmt.Errorf("[Ping] Viewnum from Ping is more than the latest Viewnum sent to the primary server")
+	}
 
 	// 1. update view
-	// vs doesn't have primary yet (so it shouldn't have backup either)
-	if args.Me == vs.getReturnView().Primary {
+	// if the last Ping primary server sent viewserver a signal
+	if args.Me == vs.getLastViewToPrimary().Primary {
 		// the primary server has crashed
 		if args.Viewnum == 0 {
 			vs.handlePrimaryCrash(args)
 			vs.views.updateACK(vs.views.getReturnView().Viewnum)
 		} else {
 			// ACK
-			log.Printf("[Ping] Update ACK")
+			// log.Printf("[Ping] Update ACK")
 				vs.views.updateACK(args.Viewnum)
 		}
 
-		// the backup server has crashed
-	} else if args.Me == vs.getCurrBackup() {
+	// it's another server
+	} else if args.Me == vs.getNextBackup() {
 		if args.Viewnum == 0 {
 			vs.handleBackupCrash(args)
 		}
 
 	// at this point the new args are coming from a new server or it is just idle
-	} else if vs.getCurrPrimary() == "" {
-		log.Printf("[Ping] emplace new primary")
-		vs.views.emplaceCurrView(args.Me, "")
-	} else if vs.getCurrBackup() == "" {
-		log.Printf("[Ping] emplace new backup")
-		vs.views.emplaceCurrView(vs.getCurrPrimary(), args.Me)
+	} else if vs.getNextPrimary() == "" {
+		// log.Printf("[Ping] emplace new primary")
+		vs.views.emplaceNextView(args.Me, "")
+	} else if vs.getNextBackup() == "" {
+		// log.Printf("[Ping] emplace new backup")
+		vs.views.emplaceNextView(vs.getNextPrimary(), args.Me)
 	} else {
-		log.Printf("[Ping] update idle servers")
+		// log.Printf("[Ping] update idle servers")
 		vs.updateIdleServers(args)
 	}
 
@@ -135,9 +150,9 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	vs.updatePing(args)
 
 	// 3. return
-	reply.View = *vs.getReturnView()
-	vs.views.Printf()
-  log.Printf("[Ping: end]")
+	reply.View = *vs.getLastViewToPrimary()
+	// vs.views.Printf()
+  // log.Printf("[Ping: end]")
   return nil
 }
 
@@ -147,9 +162,9 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
   // Your code here.
-	reply.View = *vs.getReturnView()
+	reply.View = *vs.getLastViewToPrimary()
 
-	vs.views.Printf()
+	// vs.views.Printf()
   return nil
 }
 
@@ -162,14 +177,14 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 func (vs *ViewServer) tick() {
 
   // Your code here.
-	log.Printf("[tick: start]")
-	if vs.isForzen(vs.getCurrBackup()) {
-		vs.views.emplaceCurrView(vs.views.getCurrView().Primary, vs.popIdleServer())
+	// log.Printf("[tick: start]")
+	if vs.isForzen(vs.getNextBackup()) {
+		vs.views.emplaceNextView(vs.views.getNextView().Primary, vs.popIdleServer())
 	}
-	if vs.isForzen(vs.getCurrPrimary()) {
-		vs.views.emplaceCurrView(vs.getCurrBackup(), vs.popIdleServer())
+	if vs.isForzen(vs.getNextPrimary()) {
+		vs.views.emplaceNextView(vs.getNextBackup(), vs.popIdleServer())
 	}
-	log.Printf("[tick: end]")
+	// log.Printf("[tick: end]")
 }
 
 //

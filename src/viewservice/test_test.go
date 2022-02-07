@@ -235,9 +235,7 @@ func Test1(t *testing.T) {
       }
       time.Sleep(PingInterval)
     }
-		fmt.Printf("Test: Viewserver waits for primary to ack view checking...\n")
     check(t, ck1, ck3.me, ck1.me, vx.Viewnum+1)
-		fmt.Printf("Test: Viewserver waits for primary to ack view checking done...\n")
     vy, _ := ck1.Get()
     // ck3 is the primary, but it never acked.
     // let ck3 die. check that ck1 is not promoted.
@@ -248,11 +246,9 @@ func Test1(t *testing.T) {
       }
       time.Sleep(PingInterval)
     }
-		fmt.Printf("Test: Viewserver waits for primary to ack view 2nd checking...\n")
     check(t, ck2, ck3.me, ck1.me, vy.Viewnum)
-		fmt.Printf("Test: Viewserver waits for primary to ack view 2nd checking done...\n")
   }
-  fmt.Printf("Passed:  Viewserver waits for primary to ack view ...\n")
+  fmt.Printf("  ... Passed\n")
 
   // if old servers die, check that a new (uninitialized) server
   // cannot take over.
