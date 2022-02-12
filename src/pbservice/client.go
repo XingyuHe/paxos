@@ -1,8 +1,11 @@
 package pbservice
 
-import "viewservice"
-import "net/rpc"
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"net/rpc"
+	"viewservice"
+)
 
 // You'll probably need to uncomment these:
 // import "time"
@@ -21,7 +24,6 @@ func MakeClerk(vshost string, me string) *Clerk {
   ck := new(Clerk)
   ck.vs = viewservice.MakeClerk(me, vshost)
   // Your ck.* initializations here
-
   return ck
 }
 
@@ -69,8 +71,20 @@ func call(srv string, rpcname string,
 func (ck *Clerk) Get(key string) string {
 
   // Your code here.
+	args := &GetArgs{Key: key}
+	reply := &GetReply{}
 
-  return "???"
+	for {
+		ok := call(ck.vs.Primary(), "PBServer.Get", args, reply)
+		if ok {
+			if reply.Err != "" {
+				log.Printf("Get key %s results error: %s", key, reply.Err)
+				return ""
+			} else {
+				return reply.Value
+			}
+		}
+	}
 }
 
 //
@@ -80,7 +94,15 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 
   // Your code here.
-  return "???"
+	// TODO: not sure if it's okay to use ck.vs.Primary() rather than keep track of primary by self
+	args := &PutArgs{Key: key, Value: value, DoHash: dohash}
+	reply := &PutReply{}
+  for {
+		ok := call(ck.vs.Primary(), "PBServer.Put", args, reply) 
+		if ok {
+			return reply.PreviousValue
+		}
+	}
 }
 
 func (ck *Clerk) Put(key string, value string) {

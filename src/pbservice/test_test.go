@@ -51,6 +51,7 @@ func TestBasicFail(t *testing.T) {
   if vck.Primary() != s1.me {
     t.Fatal("first primary never formed view")
   }
+  fmt.Printf("Test: Single primary, no backup \t 1 \n")
   
   ck.Put("111", "v1")
   check(ck, "111", "v1")

@@ -1,7 +1,10 @@
 package viewservice
 
-import "time"
-import "log"
+import (
+	"log"
+	"strings"
+	"time"
+)
 
 //
 // This is a non-replicated view service for a simple
@@ -27,7 +30,7 @@ import "log"
 // received a ping from the primary or backup for a while, or
 // if there was no backup and a new server starts Pinging.
 //
-// The view server will not proceed to a new view until 
+// The view server will not proceed to a new view until
 // the primary from the current view acknowledges
 // that it is operating in the current view. This helps
 // ensure that there's at most one p/b primary operating at
@@ -84,5 +87,17 @@ func (args * PingArgs) Printf() {
   log.Printf("PingArgs: sender port: %s, sender viewnum: %d", args.Me, args.Viewnum)
 }
 func (view *View) Printf() {
-  log.Printf("\t View: num: %d, primary: %s, backup: %s", view.Viewnum, view.Primary, view.Backup)
+  log.Printf("\t View: num: %d, primary: %s, backup: %s", view.Viewnum, 
+							view.GetPrimaryName(),
+							view.GetBackupName())
+}
+func GetCleanName(badServerName string) string {
+	nameList := strings.Split(badServerName, "-")
+	return nameList[len(nameList) - 1]
+}
+func (view *View) GetPrimaryName() string {
+	return GetCleanName(view.Primary)
+}
+func (view *View) GetBackupName() string {
+	return GetCleanName(view.Backup)
 }

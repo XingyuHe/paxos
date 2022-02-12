@@ -36,6 +36,14 @@ type GetReply struct {
 
 
 // Your RPC definitions here.
+type ReplicateReply struct {
+  Err Err
+	data map[string]string
+}
+
+type ReplicateArgs struct {
+	me string
+}
 
 func hash(s string) uint32 {
   h := fnv.New32a()

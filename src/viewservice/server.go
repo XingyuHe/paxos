@@ -117,7 +117,8 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	// 1. update view
 	// if the last Ping primary server sent viewserver a signal
-	if args.Me == vs.getLastViewToPrimary().Primary {
+	if args.Me == vs.getLastViewToPrimary().Primary || 
+		args.Me == vs.views.getACKedView().Primary {
 		// the primary server has crashed
 		if args.Viewnum == 0 {
 			vs.handlePrimaryCrash(args)
@@ -125,7 +126,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		} else {
 			// ACK
 			// log.Printf("[Ping] Update ACK")
-				vs.views.updateACK(args.Viewnum)
+			vs.views.updateACK(args.Viewnum)
 		}
 
 	// it's another server
@@ -178,6 +179,7 @@ func (vs *ViewServer) tick() {
 
   // Your code here.
 	// log.Printf("[tick: start]")
+	vs.views.Printf()
 	if vs.isForzen(vs.getNextBackup()) {
 		vs.views.emplaceNextView(vs.views.getNextView().Primary, vs.popIdleServer())
 	}
