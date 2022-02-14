@@ -1,6 +1,8 @@
 package viewservice
 
 import "time"
+import "log"
+import "strings"
 
 //
 // This is a non-replicated view service for a simple
@@ -77,4 +79,23 @@ type GetArgs struct {
 
 type GetReply struct {
   View View
+}
+
+func (args * PingArgs) Printf() {
+  log.Printf("PingArgs: sender port: %s, sender viewnum: %d", GetCleanName(args.Me), args.Viewnum)
+}
+func (view *View) Printf() {
+  log.Printf("\t View: num: %d, primary: %s, backup: %s", view.Viewnum, 
+							view.GetPrimaryName(),
+							view.GetBackupName())
+}
+func GetCleanName(badServerName string) string {
+	nameList := strings.Split(badServerName, "-")
+	return nameList[len(nameList) - 1]
+}
+func (view *View) GetPrimaryName() string {
+	return GetCleanName(view.Primary)
+}
+func (view *View) GetBackupName() string {
+	return GetCleanName(view.Backup)
 }

@@ -191,6 +191,7 @@ func Test1(t *testing.T) {
     }
     check(t, ck1, ck3.me, ck1.me, vx.Viewnum+1)
     vy, _ := ck1.Get()
+		fmt.Printf("Test: MIDDLE Viewserver waits for primary to ack view ...\n")
     // ck3 is the primary, but it never acked.
     // let ck3 die. check that ck1 is not promoted.
     for i := 0; i < DeadPings * 3; i++ {
