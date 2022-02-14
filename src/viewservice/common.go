@@ -1,10 +1,8 @@
 package viewservice
 
-import (
-	"log"
-	"strings"
-	"time"
-)
+import "time"
+import "log"
+import "strings"
 
 //
 // This is a non-replicated view service for a simple
@@ -84,7 +82,7 @@ type GetReply struct {
 }
 
 func (args * PingArgs) Printf() {
-  log.Printf("PingArgs: sender port: %s, sender viewnum: %d", args.Me, args.Viewnum)
+  log.Printf("PingArgs: sender port: %s, sender viewnum: %d", GetCleanName(args.Me), args.Viewnum)
 }
 func (view *View) Printf() {
   log.Printf("\t View: num: %d, primary: %s, backup: %s", view.Viewnum, 
