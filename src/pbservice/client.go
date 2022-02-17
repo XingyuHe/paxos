@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/rpc"
 	"viewservice"
+	"crypto/rand"
+	"math/big"
 )
 
 // You'll probably need to uncomment these:
@@ -17,6 +19,7 @@ import (
 type Clerk struct {
   vs *viewservice.Clerk
   // Your declarations here
+	view viewservice.View
 }
 
 
@@ -24,6 +27,7 @@ func MakeClerk(vshost string, me string) *Clerk {
   ck := new(Clerk)
   ck.vs = viewservice.MakeClerk(me, vshost)
   // Your ck.* initializations here
+	ck.view, _ = ck.vs.Get()
   return ck
 }
 
@@ -57,7 +61,7 @@ func call(srv string, rpcname string,
     return true
   }
 
-  fmt.Println(err)
+  fmt.Println("call error: ", srv, err)
   return false
 }
 
@@ -72,19 +76,24 @@ func (ck *Clerk) Get(key string) string {
 
   // Your code here.
 	args := &GetArgs{Key: key}
-	reply := &GetReply{}
+	var reply GetReply
 
 	for {
-		ok := call(ck.vs.Primary(), "PBServer.Get", args, reply)
+		ok := call(ck.vs.Primary(), "PBServer.Get", args, &reply)
 		if ok {
 			if reply.Err != "" {
-				log.Printf("Get key %s results error: %s", key, reply.Err)
-				return ""
 			} else {
 				return reply.Value
 			}
 		}
 	}
+}
+
+func getUniqueNumber() int64 {
+	max := big.NewInt(int64(1) << 62)
+  bigx, _ := rand.Int(rand.Reader, max)
+  x := bigx.Int64()
+  return x
 }
 
 //
@@ -95,13 +104,25 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 
   // Your code here.
 	// TODO: not sure if it's okay to use ck.vs.Primary() rather than keep track of primary by self
-	args := &PutArgs{Key: key, Value: value, DoHash: dohash}
+	// generate PutExt ID
+	putID := getUniqueNumber()
+	log.Printf("[PutExt]: begin with putId %d", putID)
+	args := &PutArgs{Key: key, Value: value, DoHash: dohash, PutID: putID}
 	reply := &PutReply{}
   for {
 		ok := call(ck.vs.Primary(), "PBServer.Put", args, reply) 
 		if ok {
+			log.Printf("[PutExt]: Put succeeded")
 			return reply.PreviousValue
+		} else if reply.Err == Err("fail to call backup") ||
+		reply.Err == Err("wrong primary") {
+			newView, ok := ck.vs.Get()
+			if ok {
+				ck.view = newView
+			}
 		}
+
+		log.Printf("[PutExt]: Put failed")
 	}
 }
 

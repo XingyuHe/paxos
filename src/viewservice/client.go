@@ -81,6 +81,7 @@ func (ck *Clerk) Get() (View, bool) {
 
 func (ck *Clerk) Primary() string {
   v, ok := ck.Get()
+	v.Printf()
   if ok {
     return v.Primary
   }
@@ -89,6 +90,7 @@ func (ck *Clerk) Primary() string {
 
 func (ck *Clerk) Backup() string {
   v, ok := ck.Get()
+	v.Printf()
   if ok {
     return v.Backup
   }

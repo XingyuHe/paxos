@@ -1,6 +1,9 @@
 package pbservice
 
-import "hash/fnv"
+import (
+	"hash/fnv"
+	"log"
+)
 
 const (
   OK = "OK"
@@ -14,6 +17,7 @@ type PutArgs struct {
   Value string
   DoHash bool // For PutHash
   // You'll have to add definitions here.
+	PutID int64
 
   // Field names must start with capital letters,
   // otherwise RPC will break.
@@ -38,16 +42,20 @@ type GetReply struct {
 // Your RPC definitions here.
 type ReplicateReply struct {
   Err Err
-	data map[string]string
+	Data map[string]string
 }
 
 type ReplicateArgs struct {
-	me string
+	Me string
 }
 
 func hash(s string) uint32 {
   h := fnv.New32a()
   h.Write([]byte(s))
   return h.Sum32()
+}
+
+func (pa *PutArgs) Printf() {
+	log.Printf("\t PutArgs: Key: %s, Value: %s, DoHash: %t", pa.Key, pa.Value, pa.DoHash)
 }
 

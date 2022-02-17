@@ -52,7 +52,7 @@ func TestBasicFail(t *testing.T) {
     t.Fatal("first primary never formed view")
   }
   fmt.Printf("Test: Single primary, no backup \t 1 \n")
-  
+
   ck.Put("111", "v1")
   check(ck, "111", "v1")
 
@@ -176,12 +176,16 @@ func TestAtMostOnce(t *testing.T) {
   k := "counter"
   val := ""
   for i := 0; i < 100; i++ {
+		log.Printf("[TEST]: round %d", i)
     v := strconv.Itoa(i)
+		log.Printf("[TEST]: Before Hash")
     pv := ck.PutHash(k, v)
+		log.Printf("[TEST]: After Hash")
     if pv != val {
       t.Fatalf("ck.Puthash() returned %v but expected %v\n", pv, val)
     }
     h := hash(val + v)
+		log.Printf("[TEST]: %s + %s = correctOrigVal: %d", val, v, h)
     val = strconv.Itoa(int(h))
   }
 
@@ -225,9 +229,11 @@ func TestFailPut(t *testing.T) {
   }
   time.Sleep(time.Second) // wait for backup initializion
   v1, _ := vck.Get()
+  fmt.Printf("Test: corret primary without sleeping ...\n")
   if v1.Primary != s1.me || v1.Backup != s2.me {
     t.Fatalf("wrong primary or backup")
   }
+  fmt.Printf("Test Passed: corret primary without sleeping ...\n")
 
   ck := MakeClerk(vshost, "")
 
@@ -264,16 +270,21 @@ func TestFailPut(t *testing.T) {
   fmt.Printf("Test: Put() immediately after primary failure ...\n")
   s1.kill()
   ck.Put("b", "bbb")
+	fmt.Printf("Finish putting")
   check(ck, "b", "bbb")
+	fmt.Printf("Finish checking")
 
   for i := 0; i < viewservice.DeadPings * 3; i++ {
     v, _ := vck.Get()
+		fmt.Printf("IN the loop view")
+		v.Printf()
     if v.Viewnum > v2.Viewnum && v.Primary != "" {
       break
     }
     time.Sleep(viewservice.PingInterval)
   }
   time.Sleep(time.Second)
+  fmt.Printf("  FINIHSED SLEEPING\n")
 
   check(ck, "a", "aaa")
   check(ck, "b", "bbb")
@@ -283,6 +294,7 @@ func TestFailPut(t *testing.T) {
   s1.kill()
   s2.kill()
   s3.kill()
+  fmt.Printf("  START SLEEPING\n")
   time.Sleep(viewservice.PingInterval * 2)
   vs.Kill()
 }
@@ -290,7 +302,7 @@ func TestFailPut(t *testing.T) {
 // do a bunch of concurrent Put()s on the same key,
 // then check that primary and backup have identical values.
 // i.e. that they processed the Put()s in the same order.
-func TestConcurrentSame(t *testing.T) {
+func TestConcurrent(t *testing.T) {
   runtime.GOMAXPROCS(4)
 
   tag := "cs"
@@ -317,6 +329,7 @@ func TestConcurrentSame(t *testing.T) {
   
   // give p+b time to ack, initialize
   time.Sleep(viewservice.PingInterval * viewservice.DeadPings)
+	log.Printf("Passed 1")
 
   done := false
 
@@ -348,6 +361,7 @@ func TestConcurrentSame(t *testing.T) {
       t.Fatalf("Get(%v) failed from primary", i)
     }
   }
+	log.Printf("Passed 2")
 
   // kill the primary
   for i := 0; i < nservers; i++ {
@@ -356,6 +370,7 @@ func TestConcurrentSame(t *testing.T) {
       break
     }
   }
+	log.Printf("Passed 3")
   for iters := 0; iters < viewservice.DeadPings*2; iters++ {
     view, _ := vck.Get()
     if view.Primary == view1.Backup {
@@ -363,10 +378,12 @@ func TestConcurrentSame(t *testing.T) {
     }
     time.Sleep(viewservice.PingInterval)
   }
+	log.Printf("Passed 4")
   view2, _ := vck.Get()
   if view2.Primary != view1.Backup {
     t.Fatal("wrong Primary")
   }
+	log.Printf("Passed 5")
 
   // read from old backup
   for i := 0; i < nkeys; i++ {
@@ -411,6 +428,7 @@ func TestConcurrentSameUnreliable(t *testing.T) {
     }
     time.Sleep(viewservice.PingInterval)
   }
+	log.Printf("Passed 1")
   
   // give p+b time to ack, initialize
   time.Sleep(viewservice.PingInterval * viewservice.DeadPings)
@@ -431,6 +449,7 @@ func TestConcurrentSameUnreliable(t *testing.T) {
       }
     }(xi)
   }
+	log.Printf("Passed 2")
 
   time.Sleep(5 * time.Second)
   done = true
@@ -453,6 +472,7 @@ func TestConcurrentSameUnreliable(t *testing.T) {
       break
     }
   }
+	log.Printf("Passed 3")
   for iters := 0; iters < viewservice.DeadPings*2; iters++ {
     view, _ := vck.Get()
     if view.Primary == view1.Backup {
@@ -464,6 +484,7 @@ func TestConcurrentSameUnreliable(t *testing.T) {
   if view2.Primary != view1.Backup {
     t.Fatal("wrong Primary")
   }
+	log.Printf("Passed 4")
 
   // read from old backup
   for i := 0; i < nkeys; i++ {

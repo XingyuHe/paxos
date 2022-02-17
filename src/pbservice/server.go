@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -36,7 +37,13 @@ type PBServer struct {
   finish chan interface{}
   // Your declarations here.
 	data map[string]string
+	dataLock sync.RWMutex
+
+	putReplyLog map[int64]PutReply
+	putReplyLogLock sync.RWMutex
+
 	view viewservice.View
+	viewLock sync.RWMutex
 }
 
 func (pb *PBServer) GetPrimary() string {
@@ -57,8 +64,20 @@ func (pb *PBServer) HasBackup() bool {
 func (pb *PBServer) IsIdle() bool {
 	return !pb.IsBackup() && !pb.IsPrimary()
 }
-func (pb *PBServer) PutData(key string, val string) {
-	pb.data[key] = val
+func (pb *PBServer) PutData(key string, val string, doHash bool) {
+
+	if !doHash {
+		pb.data[key] = val
+	} else {
+		oldVal := ""
+		oldVal, _ = pb.data[key]
+
+		hashRes := strconv.Itoa(int(hash(oldVal + val)))
+
+		log.Printf("[PutData]: %s + %s = %s", oldVal, val, hashRes)
+
+		pb.data[key] = hashRes
+	}
 }
 func (pb *PBServer) GetData(key string) string {
 	return pb.data[key]
@@ -81,10 +100,17 @@ protocol:
 */
 
 func (pb *PBServer) ForwardPut(args *PutArgs, reply *PutReply) error {
-	log.Printf("[ForwardPut]: (%s, %s)", args.Key, args.Value)
+	log.Printf("[ForwardPut]: (%s, %s) at server %s", args.Key, args.Value, pb.me)
+	pb.dataLock.Lock(); defer pb.dataLock.Unlock()
+	log.Printf("[ForwardPut]: datalocked")
+	pb.putReplyLogLock.Lock(); defer pb.putReplyLogLock.Unlock()
+	log.Printf("[ForwardPut]: putLog locked")
+
 	if pb.IsBackup() {
 		reply.PreviousValue = pb.GetData(args.Key)
-		pb.PutData(args.Key, args.Value)
+		pb.PutData(args.Key, args.Value, args.DoHash)
+		log.Printf("[ForwardPut]: putdata completed")
+		pb.putReplyLog[args.PutID] = *reply
 		return nil
 	} else {
 		reply.Err = Err(fmt.Sprintf("server %s is not a backup", pb.me))
@@ -92,26 +118,72 @@ func (pb *PBServer) ForwardPut(args *PutArgs, reply *PutReply) error {
 	}
 }
 
+
+func (pb *PBServer) TryCall(srv string, rpcname string,
+          args interface{}, reply interface{}, done chan bool) {
+  ok := call(srv, rpcname, args, reply)
+	if ok {
+		done <- true
+	} 
+}
+
 func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
   // Your code here.
-	backupReply := &PutReply{}
-	if pb.HasBackup() {
-		ok := call(pb.GetBackup(), "PBServer.ForwardPut", args, backupReply)
-		if !ok {
-			return fmt.Errorf("server %s not respond", pb.GetBackup())
-		}
+	log.Printf("[Put]: at server %s", pb.me)
+	args.Printf()
+
+	if !pb.IsPrimary() {
+		reply.Err = Err("wrong primary")
+		return fmt.Errorf("server %s is not a primary server", pb.me)
 	}
+
+	pb.putReplyLogLock.Lock(); defer pb.putReplyLogLock.Unlock()
+
+	if prevReply, ok := pb.putReplyLog[args.PutID]; ok {
+		*reply = prevReply
+		return nil
+	}
+
+	pb.dataLock.Lock(); defer pb.dataLock.Unlock()
+
+	backupReply := &PutReply{}
+	// do forward call if pb has backup
+	if pb.HasBackup() {
+		pb.viewLock.RLock(); defer pb.viewLock.RUnlock()
+		pb.view.Printf()
+
+		forwardPutDone := make(chan bool); defer close(forwardPutDone)
+		go pb.TryCall(pb.GetBackup(), "PBServer.ForwardPut", args, backupReply, forwardPutDone)
+
+		select {
+		case <- forwardPutDone:
+			if backupReply.Err != "" {
+				reply.Err = Err("fail to call backup")
+				return fmt.Errorf("fail to call backup") // TODO: if the backup doesn't respond, the primary thinks it's dead
+			}
+
+		case <- time.After((viewservice.DeadPings) * viewservice.PingInterval):
+			fmt.Printf("Time out")
+			reply.Err = Err("fail to call backup")
+			return fmt.Errorf("fail to call backup") // TODO: if the backup doesn't respond, the primary thinks it's dead
+		}
+
+	}
+	log.Printf("[Put]: finishing forward put")
+
+	// if backup succeeds || no back up
 	if backupReply.Err == "" {
 		reply.PreviousValue = pb.GetData(args.Key)
-		pb.PutData(args.Key, args.Value)
-		return nil
-	} else {
-		reply.Err = Err(fmt.Sprintf("Backup of server %s changed", pb.me))
-		return fmt.Errorf("backup of server %s changed", pb.me)
+		pb.PutData(args.Key, args.Value, args.DoHash)
+		pb.putReplyLog[args.PutID] = *reply
+		log.Printf("[Put]: finished putting data")
 	}
+	return nil
 }
 
 func (pb *PBServer) ForwardGet(args *GetArgs, reply *GetReply) error {
+	log.Printf("[ForwardGet]: server: %s", viewservice.GetCleanName(pb.me))
+	pb.dataLock.RLock(); defer pb.dataLock.RUnlock()
 	if pb.IsBackup() {
 		return nil
 	} else {
@@ -122,9 +194,14 @@ func (pb *PBServer) ForwardGet(args *GetArgs, reply *GetReply) error {
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
   // Your code here.
+	log.Printf("[Get]: server: %s", viewservice.GetCleanName(pb.me))
+	pb.dataLock.RLock(); defer pb.dataLock.RUnlock()
+	pb.PrintfData()
 	backupReply := &GetReply{}
 	if pb.HasBackup() {
+		pb.viewLock.RLock()
 		ok := call(pb.GetBackup(), "PBServer.ForwardGet", args, backupReply)
+		pb.viewLock.RUnlock()
 		if !ok {
 			return fmt.Errorf("server %s not respond", pb.GetBackup())
 		} 
@@ -141,8 +218,13 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
 
 func (pb *PBServer) Replicate(args *ReplicateArgs, reply *ReplicateReply) error {
+	log.Printf("[Replicate]: original data")
+	pb.dataLock.RLock(); defer pb.dataLock.RUnlock()
+
+	pb.PrintfData()
+	reply.Data = make(map[string]string)
 	for key, value := range pb.data {
-		reply.data[key] = value
+		reply.Data[key] = value
 	}
 	return nil
 }
@@ -154,18 +236,24 @@ func (pb *PBServer) Replicate(args *ReplicateArgs, reply *ReplicateReply) error 
 func (pb *PBServer) tick() {
   // Your code here.
 	newView, _ := pb.vs.Ping(pb.view.Viewnum)
+	pb.dataLock.Lock(); defer pb.dataLock.Unlock()
+	pb.viewLock.Lock(); defer pb.viewLock.Unlock()
+
 	log.Printf("server tick: %s", viewservice.GetCleanName(pb.me))
 	pb.view.Printf()
 	newView.Printf()
 
 	// idle to backup: copy all the things from primary
 	if pb.IsIdle() && newView.Backup == pb.me {
+		log.Printf("[tick]: Transferred data")
 		args := &ReplicateArgs{}
 		reply := &ReplicateReply{}
+		reply.Data = make(map[string]string)
 		call(newView.Primary, "PBServer.Replicate", args, reply)
-		for key, val := range reply.data {
+		for key, val := range reply.Data {
 			pb.data[key] = val
 		}
+		pb.PrintfData()
 
 	} else if pb.IsBackup() && newView.Primary == pb.me {
 		// backup to primary
@@ -194,8 +282,7 @@ func StartServer(vshost string, me string) *PBServer {
   pb.finish = make(chan interface{})
   // Your pb.* initializations here.
 	pb.data = make(map[string]string)
-	pb.data["abcd"] = "abdc"
-	fmt.Printf("data: %s from %s", pb.data["abcd"], me)
+	pb.putReplyLog = make(map[int64]PutReply)
 
   rpcs := rpc.NewServer()
   rpcs.Register(pb)
