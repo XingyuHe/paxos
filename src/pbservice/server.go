@@ -152,22 +152,12 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 		pb.viewLock.RLock(); defer pb.viewLock.RUnlock()
 		pb.view.Printf()
 
-		forwardPutDone := make(chan bool); defer close(forwardPutDone)
-		go pb.TryCall(pb.GetBackup(), "PBServer.ForwardPut", args, backupReply, forwardPutDone)
+		ok := call(pb.GetBackup(), "PBServer.ForwardPut", args, backupReply)
 
-		select {
-		case <- forwardPutDone:
-			if backupReply.Err != "" {
-				reply.Err = Err("fail to call backup")
-				return fmt.Errorf("fail to call backup") // TODO: if the backup doesn't respond, the primary thinks it's dead
-			}
-
-		case <- time.After((viewservice.DeadPings) * viewservice.PingInterval):
-			fmt.Printf("Time out")
+		if backupReply.Err != "" || !ok {
 			reply.Err = Err("fail to call backup")
 			return fmt.Errorf("fail to call backup") // TODO: if the backup doesn't respond, the primary thinks it's dead
 		}
-
 	}
 	log.Printf("[Put]: finishing forward put")
 
@@ -229,6 +219,20 @@ func (pb *PBServer) Replicate(args *ReplicateArgs, reply *ReplicateReply) error 
 	return nil
 }
 
+func (pb *PBServer) IdleToBackup(newView *viewservice.View) bool {
+	return pb.IsIdle() && newView.Backup == pb.me 
+}
+
+func (pb *PBServer) BackupToBackup(newView *viewservice.View) bool {
+	return pb.IsBackup() && newView.Backup == pb.me && newView.Viewnum > pb.view.Viewnum
+}
+
+func (pb *PBServer) DeleteData() {
+	for key, _ := range pb.data {
+		delete(pb.data, key)
+	}
+}
+
 // ping the viewserver periodically.
 // 2 important events
 // 1. assigned as primary
@@ -244,12 +248,14 @@ func (pb *PBServer) tick() {
 	newView.Printf()
 
 	// idle to backup: copy all the things from primary
-	if pb.IsIdle() && newView.Backup == pb.me {
+	if pb.IdleToBackup(&newView) || pb.BackupToBackup(&newView) {
 		log.Printf("[tick]: Transferred data")
 		args := &ReplicateArgs{}
 		reply := &ReplicateReply{}
 		reply.Data = make(map[string]string)
 		call(newView.Primary, "PBServer.Replicate", args, reply)
+		pb.DeleteData()
+
 		for key, val := range reply.Data {
 			pb.data[key] = val
 		}
@@ -259,9 +265,7 @@ func (pb *PBServer) tick() {
 		// backup to primary
 	} else if pb.IsPrimary() && newView.Primary != pb.me {
 		// primary to idle
-		for key, _ := range pb.data {
-			delete(pb.data, key)
-		}
+		pb.DeleteData()
 	}
 	pb.view = newView
 }
