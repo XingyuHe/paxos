@@ -111,15 +111,30 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	reply := &PutReply{}
   for {
 		ok := call(ck.vs.Primary(), "PBServer.Put", args, reply) 
+		// if ok {
+		// 	log.Printf("[PutExt]: Put succeeded")
+		// 	return reply.PreviousValue
+		// } else if reply.Err == Err("fail to call backup") ||
+		// reply.Err == Err("wrong primary") {
+		// 	newView, ok := ck.vs.Get()
+		// 	if ok {
+		// 		ck.view = newView
+		// 	}
+		// }
+
 		if ok {
-			log.Printf("[PutExt]: Put succeeded")
-			return reply.PreviousValue
-		} else if reply.Err == Err("fail to call backup") ||
-		reply.Err == Err("wrong primary") {
-			newView, ok := ck.vs.Get()
-			if ok {
-				ck.view = newView
+
+			switch reply.Err {
+			case ErrWrongServer:
+				newView, ok := ck.vs.Get()
+				if ok {
+					ck.view = newView
+				}
+			default:
+				log.Printf("[PutExt]: Put succeeded")
+				return reply.PreviousValue
 			}
+
 		}
 
 		log.Printf("[PutExt]: Put failed")

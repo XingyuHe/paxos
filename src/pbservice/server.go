@@ -113,7 +113,7 @@ func (pb *PBServer) ForwardPut(args *PutArgs, reply *PutReply) error {
 		pb.putReplyLog[args.PutID] = *reply
 		return nil
 	} else {
-		reply.Err = Err(fmt.Sprintf("server %s is not a backup", pb.me))
+		reply.Err = ErrWrongServer
 		return fmt.Errorf("server %s is not a backup", pb.me)
 	}
 }
@@ -133,7 +133,7 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 	args.Printf()
 
 	if !pb.IsPrimary() {
-		reply.Err = Err("wrong primary")
+		reply.Err = ErrWrongServer
 		return fmt.Errorf("server %s is not a primary server", pb.me)
 	}
 
@@ -154,8 +154,8 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 
 		ok := call(pb.GetBackup(), "PBServer.ForwardPut", args, backupReply)
 
-		if backupReply.Err != "" || !ok {
-			reply.Err = Err("fail to call backup")
+		if backupReply.Err == ErrWrongServer || !ok {
+			reply.Err = ErrWrongServer
 			return fmt.Errorf("fail to call backup") // TODO: if the backup doesn't respond, the primary thinks it's dead
 		}
 	}
