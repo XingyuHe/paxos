@@ -648,16 +648,20 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
     rr := rand.New(rand.NewSource(int64(os.Getpid())))
     for done == false {
       i := rr.Int() % nservers
-      // fmt.Printf("%v killing %v\n", ts(), 5001+i)
+      log.Printf("[kill & restart] before killing server %v\n", i+1)
       sa[i].kill()
 
       // wait long enough for new view to form, backup to be initialized
+      log.Printf("[kill & restart] after killing server %v\n", i+1)
       time.Sleep(2 * viewservice.PingInterval * viewservice.DeadPings)
+      log.Printf("[kill & restart] after killing server %v, after sleeping\n", i+1)
 
       sa[i] = StartServer(vshost, port(tag, i+1))
 
+      log.Printf("[kill & restart] after killing, start server %v\n", i+1)
       // wait long enough for new view to form, backup to be initialized
       time.Sleep(2 * viewservice.PingInterval * viewservice.DeadPings)
+      log.Printf("[kill & restart] after start server %v, after sleep\n", i+1)
     }
   } ()
 
@@ -675,17 +679,22 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
       data[k] = ""
       n := 0
       for done == false {
+				log.Printf("[iteration]: ")
         v := strconv.Itoa(n)
+				log.Printf("\t[iteration]: calling PutHash(%s, %s)", k, v)
         pv := ck.PutHash(k, v)
+				log.Printf("\t[iteration]: finished PutHash with pv=%s", pv)
         if pv != data[k] {
           t.Fatalf("ck.Puthash(%s) returned %v but expected %v at iter %d\n", k, pv, data[k], n)
         }
         h := hash(data[k] + v)
+				log.Printf("\t[iteration]: finished PutHash with pv=%s", pv)
         data[k] = strconv.Itoa(int(h))
         v = ck.Get(k)
         if v != data[k] {
           t.Fatalf("ck.Get(%s) returned %v but expected %v at iter %d\n", k, v, data[k], n)
         }
+				log.Printf("\thash works")
         // if no sleep here, then server tick() threads do not get 
         // enough time to Ping the viewserver.
         time.Sleep(10 * time.Millisecond)

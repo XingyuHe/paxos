@@ -25,7 +25,6 @@ type ViewServer struct {
 
   // Your declarations here.
 	lastViewToPrimary *View
-	newView *View
 	ACKedViewNum uint
 	serverStatus map[string]time.Time // server port -> last time pinged
 }
@@ -133,6 +132,8 @@ func (vs *ViewServer) ACKed(view *View) bool {
 // return view
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
+	vs.mu.Lock(); defer vs.mu.Unlock()
+
 	log.Printf("[Ping]: before =================================================")
 	args.Printf()
 	vs.PrintViews()
@@ -199,6 +200,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
   // Your code here.
+	vs.mu.Lock(); defer vs.mu.Unlock()
 	if vs.lastViewToPrimary != nil {
 		reply.View = *vs.lastViewToPrimary	
 	}
@@ -219,10 +221,11 @@ func (vs *ViewServer) isFrozen(server string) bool {
 // accordingly.
 //
 func (vs *ViewServer) tick() {
+	vs.mu.Lock(); defer vs.mu.Unlock()
 
 	// Your code here.
-	log.Printf("[tick: start]")
-	vs.PrintViews()
+	// log.Printf("[tick: start]")
+	// vs.PrintViews()
 	if !vs.IsNew() && 
 			vs.ACKed(vs.lastViewToPrimary) &&
 			vs.isFrozen(vs.lastViewToPrimary.Primary) {
@@ -258,7 +261,6 @@ func StartServer(me string) *ViewServer {
   vs.me = me
   // Your vs.* initializations here.
 	vs.lastViewToPrimary = nil
-	vs.newView = nil
 	vs.ACKedViewNum = 0
 	vs.serverStatus = make(map[string]time.Time)
 

@@ -31,7 +31,9 @@ type PutReply struct {
 type GetArgs struct {
   Key string
   // You'll have to add definitions here.
+	GetID int64
 }
+
 
 type GetReply struct {
   Err Err

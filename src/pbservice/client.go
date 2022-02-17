@@ -75,15 +75,19 @@ func call(srv string, rpcname string,
 func (ck *Clerk) Get(key string) string {
 
   // Your code here.
-	args := &GetArgs{Key: key}
+	getID := getUniqueNumber()
+	args := &GetArgs{Key: key, GetID: getID}
 	var reply GetReply
 
 	for {
 		ok := call(ck.vs.Primary(), "PBServer.Get", args, &reply)
-		if ok {
-			if reply.Err != "" {
-			} else {
-				return reply.Value
+		if ok && reply.Err == Err(""){
+			log.Printf("\tPut succeeded")
+			return reply.Value
+		} else {
+			newView, ok := ck.vs.Get()
+			if ok {
+				ck.view = newView
 			}
 		}
 	}
@@ -106,23 +110,24 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	// TODO: not sure if it's okay to use ck.vs.Primary() rather than keep track of primary by self
 	// generate PutExt ID
 	putID := getUniqueNumber()
-	log.Printf("[PutExt]: begin with putId %d", putID)
+	log.Printf("[PutExt]:")
 	args := &PutArgs{Key: key, Value: value, DoHash: dohash, PutID: putID}
+	args.Printf()
 	reply := &PutReply{}
   for {
-		ok := call(ck.vs.Primary(), "PBServer.Put", args, reply) 
-		if ok {
-			log.Printf("[PutExt]: Put succeeded")
+		log.Printf("\tcalling server %s", ck.view.Primary)
+		ok := call(ck.view.Primary, "PBServer.Put", args, reply) 
+		if ok && reply.Err == Err(""){
+			log.Printf("\tPut succeeded")
 			return reply.PreviousValue
-		} else if reply.Err == Err("fail to call backup") ||
-		reply.Err == Err("wrong primary") {
+		} else {
 			newView, ok := ck.vs.Get()
 			if ok {
 				ck.view = newView
 			}
 		}
 
-		log.Printf("[PutExt]: Put failed")
+		log.Printf("\tPut failed")
 	}
 }
 
