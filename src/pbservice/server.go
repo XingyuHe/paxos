@@ -73,7 +73,7 @@ func (pb *PBServer) putData(key string, val string, doHash bool) {
 
 		hashRes := strconv.Itoa(int(hash(oldVal + val)))
 
-		log.Printf("[PutData]: %s + %s = %s", oldVal, val, hashRes)
+		// log.Printf("[PutData]: %s + %s = %s", oldVal, val, hashRes)
 
 		pb.data[key] = hashRes
 	}
@@ -100,23 +100,23 @@ protocol:
 
 func (pb *PBServer) ForwardPut(args *PutArgs, reply *PutReply) error {
 	pb.lock.Lock(); defer pb.lock.Unlock()
-	log.Printf("[ForwardPut]: (%s, %s) at server %s, %d", args.Key, args.Value, pb.me, args.PutID)
+	// log.Printf("[ForwardPut]: (%s, %s) at server %s, %d", args.Key, args.Value, pb.me, args.PutID)
 
 	if !pb.isBackup() {
-		log.Printf("[ForwardPut]: not back up at server %s, %d", pb.me, args.PutID)
+		// log.Printf("[ForwardPut]: not back up at server %s, %d", pb.me, args.PutID)
 		reply.Err = ErrWrongServer
 		return nil
 	}
 
 	if prevReply, ok := pb.putReplyLog[args.PutID]; ok {
-		log.Printf("[ForwardPut]: put executed %s, %d", pb.me, args.PutID)
+		// log.Printf("[ForwardPut]: put executed %s, %d", pb.me, args.PutID)
 		*reply = prevReply
 		return nil
 	}
 
 	reply.PreviousValue = pb.getData(args.Key)
 	pb.putData(args.Key, args.Value, args.DoHash)
-	log.Printf("[ForwardPut]: putdata completed")
+	// log.Printf("[ForwardPut]: putdata completed")
 	pb.putReplyLog[args.PutID] = *reply
 	return nil
 }
@@ -126,11 +126,11 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
   // Your code here.
 
 	pb.lock.Lock(); defer pb.lock.Unlock()
-	log.Printf("[Put]: at server %s, id; %d", pb.me, args.PutID)
-	args.Printf()
+	// log.Printf("[Put]: at server %s, id; %d", pb.me, args.PutID)
+	// args.Printf()
 
 	if !pb.isPrimary() {
-		log.Printf("[Put]: at server %s, not primary, id: %d", pb.me, args.PutID)
+		// log.Printf("[Put]: at server %s, not primary, id: %d", pb.me, args.PutID)
 		reply.Err = ErrWrongServer
 		return nil
 	}
@@ -144,7 +144,7 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 	backupReply := &PutReply{}
 	// do forward call if pb has backup
 	if pb.hasBackup() {
-		pb.view.Printf()
+		// pb.view.Printf()
 
 		ok := call(pb.getBackup(), "PBServer.ForwardPut", args, backupReply)
 
@@ -154,9 +154,9 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 
 		if backupReply.PreviousValue != pb.getData(args.Key) {
-			log.Printf("[Put]: forwardPut yields different value, %d", args.PutID)
+			// log.Printf("[Put]: forwardPut yields different value, %d", args.PutID)
 		}
-		log.Printf("[Put]: finishing forward put, %d", args.PutID)
+		// log.Printf("[Put]: finishing forward put, %d", args.PutID)
 	}
 
 	// if backup succeeds || no back up
@@ -164,14 +164,14 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 		reply.PreviousValue = pb.getData(args.Key)
 		pb.putData(args.Key, args.Value, args.DoHash)
 		pb.putReplyLog[args.PutID] = *reply
-		log.Printf("[Put]: finished putting data, %d", args.PutID)
+		// log.Printf("[Put]: finished putting data, %d", args.PutID)
 	}
 	return nil
 }
 
 func (pb *PBServer) ForwardGet(args *GetArgs, reply *GetReply) error {
 	pb.lock.Lock(); defer pb.lock.Unlock()
-	log.Printf("[ForwardGet]: server: %s", viewservice.GetCleanName(pb.me))
+	// log.Printf("[ForwardGet]: server: %s", viewservice.GetCleanName(pb.me))
 
 	if pb.isBackup() {
 		return nil
@@ -184,14 +184,14 @@ func (pb *PBServer) ForwardGet(args *GetArgs, reply *GetReply) error {
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
   // Your code here.
 	pb.lock.Lock(); defer pb.lock.Unlock()
-	log.Printf("[Get]: server: %s", viewservice.GetCleanName(pb.me))
+	// log.Printf("[Get]: server: %s", viewservice.GetCleanName(pb.me))
 
 	if !pb.isPrimary() {
 		reply.Err = ErrWrongServer
 		return nil
 	}
 
-	pb.printfData()
+	// pb.printfData()
 	backupReply := &GetReply{}
 	if pb.hasBackup() {
 		ok := call(pb.getBackup(), "PBServer.ForwardGet", args, backupReply)
@@ -217,7 +217,7 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
 func (pb *PBServer) Transfer(args *TransferArgs, reply *TransferReply) error {
 	pb.lock.Lock(); defer pb.lock.Unlock()
-	log.Printf("[Replicate]: incoming data")
+	// log.Printf("[Replicate]: incoming data")
 
 	pb.delete()
 
@@ -260,7 +260,7 @@ func (pb *PBServer) tick() {
 	newView, _ := pb.vs.Ping(pb.view.Viewnum)
 	defer pb.assignNewView(newView)
 
-	log.Printf("server tick: %s", viewservice.GetCleanName(pb.me))
+	// log.Printf("server tick: %s", viewservice.GetCleanName(pb.me))
 
 	// idle to backup: copy all the things from primary
 	if newView.Primary != pb.me && newView.Backup != pb.me {
@@ -270,7 +270,7 @@ func (pb *PBServer) tick() {
 
 		if pb.isPrimary() && newView.Primary == pb.me {
 			if newView.Backup != pb.view.Backup {
-				log.Printf("[tick]: Transferring data from server %s", pb.me)
+				// log.Printf("[tick]: Transferring data from server %s", pb.me)
 				args := &TransferArgs{}
 				reply := &TransferReply{}
 
@@ -287,12 +287,12 @@ func (pb *PBServer) tick() {
 				for key, val := range pb.putReplyLog {
 					args.PutReplyLog[key] = val
 				}
-				pb.printfData()
+				// pb.printfData()
 
 				ok := call(newView.Backup, "PBServer.Transfer", args, reply)
 				if !ok {
 					newView.Backup = ""
-					log.Printf("[tick]: Transfer call failed")
+					// log.Printf("[tick]: Transfer call failed")
 					return;
 				}
 			}
@@ -338,11 +338,11 @@ func StartServer(vshost string, me string) *PBServer {
       if err == nil && pb.dead == false {
         if pb.unreliable && (rand.Int63() % 1000) < 100 {
           // discard the request.
-					log.Printf("[StartServer] discard the request, server: %s", pb.me)
+					// log.Printf("[StartServer] discard the request, server: %s", pb.me)
           conn.Close()
         } else if pb.unreliable && (rand.Int63() % 1000) < 200 {
           // process the request but force discard of reply.
-					log.Printf("[StartServer] process the request but force discard of reply,kserver: %s ", pb.me)
+					// log.Printf("[StartServer] process the request but force discard of reply,kserver: %s ", pb.me)
           c1 := conn.(*net.UnixConn)
           f, _ := c1.File()
           err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)

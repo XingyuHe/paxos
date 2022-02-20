@@ -3,7 +3,7 @@ package pbservice
 import (
 	"crypto/rand"
 	"fmt"
-	"log"
+	// "log"
 	"math/big"
 	"net/rpc"
 	"viewservice"
@@ -112,7 +112,7 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	// TODO: not sure if it's okay to use ck.vs.Primary() rather than keep track of primary by self
 	// generate PutExt ID
 	putID := getUniqueNumber()
-	log.Printf("[PutExt]: begin with putId %d", putID)
+	// log.Printf("[PutExt]: begin with putId %d", putID)
 	args := &PutArgs{Key: key, Value: value, DoHash: dohash, PutID: putID}
   for {
 		reply := &PutReply{}
@@ -127,13 +127,13 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 					ck.view = newView
 				}
 			default:
-				log.Printf("[PutExt]: Put succeeded")
+				// log.Printf("[PutExt]: Put succeeded")
 				return reply.PreviousValue
 			}
 
 		}
 
-		log.Printf("[PutExt]: Put failed")
+		// log.Printf("[PutExt]: Put failed")
 	}
 }
 

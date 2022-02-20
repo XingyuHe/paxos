@@ -8,7 +8,7 @@ import "time"
 import "sync"
 import "fmt"
 import "os"
-/* 
+/*
 
 
 immutable: LastViewToPrimary
@@ -31,7 +31,7 @@ type ViewServer struct {
 }
 
 
-func (vs *ViewServer) PrintViews() {
+func (vs *ViewServer) printViews() {
 	log.Printf("lastViewToPrimary")
 	if vs.lastViewToPrimary != nil {
 		vs.lastViewToPrimary.Printf()
@@ -43,16 +43,16 @@ func (vs *ViewServer) PrintViews() {
 	log.Printf("--------------------------------")
 }
 
-/* 
+/*
 
-Cases when a new view is needed: 
+Cases when a new view is needed:
 1. Primary didn't Ping in time
 2. Backup didn't Ping in time
 3. There is no primary
-4. There is no backup 
+4. There is no backup
 
 */
-func (vs *ViewServer) BuildNewView(primary string, backup string) *View {
+func (vs *ViewServer) buildNewView(primary string, backup string) *View {
 	newView := new(View)
 
 	newView.Primary = primary
@@ -61,42 +61,42 @@ func (vs *ViewServer) BuildNewView(primary string, backup string) *View {
 	if vs.lastViewToPrimary == nil {
 		newView.Viewnum = 1
 	} else {
-		newView.Viewnum = vs.lastViewToPrimary.Viewnum + 1 
+		newView.Viewnum = vs.lastViewToPrimary.Viewnum + 1
 	}
 	return newView
 }
 
-func (vs *ViewServer) IsNew() bool {
-	return vs.lastViewToPrimary == nil 
+func (vs *ViewServer) isNew() bool {
+	return vs.lastViewToPrimary == nil
 }
 
-func (vs *ViewServer) BackupRestarted(args *PingArgs) bool {
+func (vs *ViewServer) backupRestarted(args *PingArgs) bool {
 	// primary server crashed before the next tick; no new primary has been assigned yet
 	// if so, then there shouldn't be a new view or the new view has the same Primary
 	return args.Viewnum == 0 && vs.lastViewToPrimary.Backup == args.Me
 }
 
-func (vs *ViewServer) IsPrimary(args *PingArgs) bool {
+func (vs *ViewServer) isPrimary(args *PingArgs) bool {
 	// primary server crashed before the next tick; no new primary has been assigned yet
 	// if so, then there shouldn't be a new view or the new view has the same Primary
 	return vs.lastViewToPrimary.Primary == args.Me
 }
 
-func (vs *ViewServer) IsBackup(args *PingArgs) bool {
+func (vs *ViewServer) isBackup(args *PingArgs) bool {
 	return vs.lastViewToPrimary.Backup == args.Me
 }
 
-func (vs *ViewServer) BackupCrashed(args *PingArgs) bool {
-	return vs.IsBackup(args) && args.Viewnum == 0
+func (vs *ViewServer) backupCrashed(args *PingArgs) bool {
+	return vs.isBackup(args) && args.Viewnum == 0
 }
 
-func (vs *ViewServer) BackupFrozen() bool {
+func (vs *ViewServer) backupFrozen() bool {
 	return vs.isFrozen(vs.lastViewToPrimary.Backup)
 }
 
-func (vs *ViewServer) HasNoBackup() bool {
-	if vs.IsNew() {
-		return false 
+func (vs *ViewServer) hasNoBackup() bool {
+	if vs.isNew() {
+		return false
 	} else {
 		return vs.lastViewToPrimary.Backup == ""
 	}
@@ -107,80 +107,82 @@ func (vs *ViewServer) updatePingTime(args *PingArgs) {
 }
 
 func (vs *ViewServer) updateLastViewToPrimary(newView *View) bool {
-	if vs.lastViewToPrimary == nil ||  vs.ACKed(vs.lastViewToPrimary) {
+	if vs.lastViewToPrimary == nil ||  vs.acked(vs.lastViewToPrimary) {
 			vs.lastViewToPrimary = newView
 			return true
 	}
 	return false
 }
 
-func (vs *ViewServer) ACKLastView(args *PingArgs) {
-	if !vs.IsNew() && args.Viewnum == vs.lastViewToPrimary.Viewnum {
+func (vs *ViewServer) ackLastView(args *PingArgs) {
+	if !vs.isNew() && args.Viewnum == vs.lastViewToPrimary.Viewnum {
 		vs.ACKedViewNum = args.Viewnum
 	}
 }
 
-func (vs *ViewServer) ACKableServer(server string) bool {
-	return !vs.IsNew() && vs.lastViewToPrimary.Primary == server
+func (vs *ViewServer) ackAbleServer(server string) bool {
+	return !vs.isNew() && vs.lastViewToPrimary.Primary == server
 }
 
-func (vs *ViewServer) ACKed(view *View) bool {
+func (vs *ViewServer) acked(view *View) bool {
 	return view != nil && view.Viewnum == vs.ACKedViewNum
 }
 
 //
-// server Ping RPC handler. 
+// server Ping RPC handler.
 // return view
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
-	log.Printf("[Ping]: before =================================================")
-	args.Printf()
-	vs.PrintViews()
+	// log.Printf("[Ping]: before =================================================")
+	// args.Printf()
+	// vs.PrintViews()
 
-	if !vs.IsNew() && vs.lastViewToPrimary.Viewnum < args.Viewnum {
+	vs.mu.Lock(); defer vs.mu.Unlock()
+
+	if !vs.isNew() && vs.lastViewToPrimary.Viewnum < args.Viewnum {
 		return fmt.Errorf("large view number")
 	}
 
-	if vs.IsNew() { 
+	if vs.isNew() {
 		// there is no view formed yet, change new view
-		vs.ACKLastView(args)
-		newView := vs.BuildNewView(args.Me, "")
+		vs.ackLastView(args)
+		newView := vs.buildNewView(args.Me, "")
 		vs.updateLastViewToPrimary(newView)
 
-	} else if vs.IsPrimary(args) {
+	} else if vs.isPrimary(args) {
 
 		if args.Viewnum == 0 {// primary crashed before the tick
 
-			if vs.ACKableServer(args.Me) { // old primary crashed 
+			if vs.ackAbleServer(args.Me) { // old primary crashed
 				if vs.lastViewToPrimary.Backup == "" { // no candidate for primary
 					// log.Printf("[Ping]: no candidate for primary in the lastViewToPrimary, DEAD")
 					vs.dead = true
-				} else { // there is backup 
-					newView := vs.BuildNewView(vs.lastViewToPrimary.Backup, "")
-					vs.ACKLastView(args)
-					vs.PrintViews()
+				} else { // there is backup
+					newView := vs.buildNewView(vs.lastViewToPrimary.Backup, "")
+					vs.ackLastView(args)
+					// vs.PrintViews()
 					vs.updateLastViewToPrimary(newView)
-					vs.PrintViews()
+					// vs.PrintViews()
 				}
 			}
-		} else { // no primary is crashed 
-			if vs.ACKableServer(args.Me) {
-				vs.ACKLastView(args)
+		} else { // no primary is crashed
+			if vs.ackAbleServer(args.Me) {
+				vs.ackLastView(args)
 			}
 		}
 	} else {
 		// this branch has nothing to do with primary server
-		vs.PrintViews()
-		if vs.HasNoBackup() || vs.BackupCrashed(args) || vs.BackupFrozen() {
+		// vs.PrintViews()
+		if vs.hasNoBackup() || vs.backupCrashed(args) || vs.backupFrozen() {
 			candidateBackup := args.Me
-			newView := vs.BuildNewView(vs.lastViewToPrimary.Primary, candidateBackup);
+			newView := vs.buildNewView(vs.lastViewToPrimary.Primary, candidateBackup);
 			vs.updateLastViewToPrimary(newView)
-			log.Println("[Ping] No Backup")
+			// log.Println("[Ping] No Backup")
 			// vs.PrintIdleServers()
 		}
 	}
-	
-	
+
+
 	vs.updatePingTime(args)
 
 	// 3. return
@@ -193,14 +195,14 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
   return nil
 }
 
-// 
+//
 // server Get() RPC handler.
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
   // Your code here.
 	if vs.lastViewToPrimary != nil {
-		reply.View = *vs.lastViewToPrimary	
+		reply.View = *vs.lastViewToPrimary
 	}
   return nil
 }
@@ -221,19 +223,21 @@ func (vs *ViewServer) isFrozen(server string) bool {
 func (vs *ViewServer) tick() {
 
 	// Your code here.
-	log.Printf("[tick: start]")
-	vs.PrintViews()
-	if !vs.IsNew() && 
-			vs.ACKed(vs.lastViewToPrimary) &&
+	// log.Printf("[tick: start]")
+	// vs.PrintViews()
+	vs.mu.Lock(); defer vs.mu.Unlock()
+
+	if !vs.isNew() &&
+			vs.acked(vs.lastViewToPrimary) &&
 			vs.isFrozen(vs.lastViewToPrimary.Primary) {
 
 		if vs.lastViewToPrimary.Backup == "" || vs.isFrozen(vs.lastViewToPrimary.Backup) {
-			log.Printf("[tick] No backup and the primary server hasn't responded")
+			// log.Printf("[tick] No backup and the primary server hasn't responded")
 			return
 		} else {
-			log.Printf("[tick] latest view primary is frozen, replacing it with a new one")
+			// log.Printf("[tick] latest view primary is frozen, replacing it with a new one")
 			// vs.PrintViews()
-			newView := vs.BuildNewView(vs.lastViewToPrimary.Backup, "")
+			newView := vs.buildNewView(vs.lastViewToPrimary.Backup, "")
 			vs.updateLastViewToPrimary(newView)
 			// vs.PrintViews()
 		}
