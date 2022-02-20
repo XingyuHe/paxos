@@ -112,7 +112,7 @@ func (pb *PBServer) ForwardPut(args *ForwardPutArgs, reply *PutReply) error {
 		return nil
 	}
 
-	reply.PreviousValue = pb.data[args.Key]
+	reply.PreviousValue = args.CorrectPreVal
 	pb.data[args.Key] = args.Value
 	log.Printf("[ForwardPut]: putdata completed, %d", args.PutID)
 	pb.putReplyLog[args.PutID] = *reply
@@ -146,7 +146,10 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 	if pb.hasBackup() {
 		pb.view.Printf()
 
-		backupArgs := &ForwardPutArgs{Key: args.Key, Value: pb.getPutDataVal(args)}
+		backupArgs := &ForwardPutArgs{Key: args.Key,
+																	Value: pb.getPutDataVal(args),
+																	CorrectPreVal: pb.getData(args.Key),
+																	PutID: args.PutID}
 		ok := call(pb.getBackup(), "PBServer.ForwardPut", backupArgs, backupReply)
 
 		if backupReply.Err == ErrWrongServer || !ok {
@@ -207,6 +210,10 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 			// backup receives and not responds || backup not receives
 			reply.Err = ErrWrongServer
 			return nil
+		}
+
+		if backupReply.Value != pb.getData(args.Key) {
+			log.Printf("[Get]: server: %s does not yield the same value from backup, %v", viewservice.GetCleanName(pb.me), args.GetID)
 		}
 	}
 
