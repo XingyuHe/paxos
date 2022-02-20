@@ -673,12 +673,7 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
         if v != data[k] {
           t.Fatalf("ck.Get(%s) returned %v but expected %v at iter %d\n", k, v, data[k], n)
         }
-<<<<<<< HEAD
-				log.Printf("\thash works")
-        // if no sleep here, then server tick() threads do not get 
-=======
         // if no sleep here, then server tick() threads do not get
->>>>>>> HW2-PARTB-REDO
         // enough time to Ping the viewserver.
         time.Sleep(10 * time.Millisecond)
         n++
