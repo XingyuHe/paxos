@@ -51,7 +51,6 @@ func TestBasicFail(t *testing.T) {
   if vck.Primary() != s1.me {
     t.Fatal("first primary never formed view")
   }
-  fmt.Printf("Test: Single primary, no backup \t 1 \n")
 
   ck.Put("111", "v1")
   check(ck, "111", "v1")
@@ -168,7 +167,7 @@ func TestAtMostOnce(t *testing.T) {
     }
     time.Sleep(viewservice.PingInterval)
   }
-  
+
   // give p+b time to ack, initialize
   time.Sleep(viewservice.PingInterval * viewservice.DeadPings)
 
@@ -176,16 +175,12 @@ func TestAtMostOnce(t *testing.T) {
   k := "counter"
   val := ""
   for i := 0; i < 100; i++ {
-		log.Printf("[TEST]: round %d", i)
     v := strconv.Itoa(i)
-		log.Printf("[TEST]: Before Hash")
     pv := ck.PutHash(k, v)
-		log.Printf("[TEST]: After Hash")
     if pv != val {
       t.Fatalf("ck.Puthash() returned %v but expected %v\n", pv, val)
     }
     h := hash(val + v)
-		log.Printf("[TEST]: %s + %s = correctOrigVal: %d", val, v, h)
     val = strconv.Itoa(int(h))
   }
 
@@ -229,11 +224,9 @@ func TestFailPut(t *testing.T) {
   }
   time.Sleep(time.Second) // wait for backup initializion
   v1, _ := vck.Get()
-  fmt.Printf("Test: corret primary without sleeping ...\n")
   if v1.Primary != s1.me || v1.Backup != s2.me {
     t.Fatalf("wrong primary or backup")
   }
-  fmt.Printf("Test Passed: corret primary without sleeping ...\n")
 
   ck := MakeClerk(vshost, "")
 
@@ -270,21 +263,16 @@ func TestFailPut(t *testing.T) {
   fmt.Printf("Test: Put() immediately after primary failure ...\n")
   s1.kill()
   ck.Put("b", "bbb")
-	fmt.Printf("Finish putting")
   check(ck, "b", "bbb")
-	fmt.Printf("Finish checking")
 
   for i := 0; i < viewservice.DeadPings * 3; i++ {
     v, _ := vck.Get()
-		fmt.Printf("IN the loop view")
-		v.Printf()
     if v.Viewnum > v2.Viewnum && v.Primary != "" {
       break
     }
     time.Sleep(viewservice.PingInterval)
   }
   time.Sleep(time.Second)
-  fmt.Printf("  FINIHSED SLEEPING\n")
 
   check(ck, "a", "aaa")
   check(ck, "b", "bbb")
@@ -294,7 +282,6 @@ func TestFailPut(t *testing.T) {
   s1.kill()
   s2.kill()
   s3.kill()
-  fmt.Printf("  START SLEEPING\n")
   time.Sleep(viewservice.PingInterval * 2)
   vs.Kill()
 }
@@ -302,7 +289,7 @@ func TestFailPut(t *testing.T) {
 // do a bunch of concurrent Put()s on the same key,
 // then check that primary and backup have identical values.
 // i.e. that they processed the Put()s in the same order.
-func TestConcurrent(t *testing.T) {
+func TestConcurrentSame(t *testing.T) {
   runtime.GOMAXPROCS(4)
 
   tag := "cs"
@@ -326,10 +313,9 @@ func TestConcurrent(t *testing.T) {
     }
     time.Sleep(viewservice.PingInterval)
   }
-  
+
   // give p+b time to ack, initialize
   time.Sleep(viewservice.PingInterval * viewservice.DeadPings)
-	log.Printf("Passed 1")
 
   done := false
 
@@ -361,7 +347,6 @@ func TestConcurrent(t *testing.T) {
       t.Fatalf("Get(%v) failed from primary", i)
     }
   }
-	log.Printf("Passed 2")
 
   // kill the primary
   for i := 0; i < nservers; i++ {
@@ -370,7 +355,6 @@ func TestConcurrent(t *testing.T) {
       break
     }
   }
-	log.Printf("Passed 3")
   for iters := 0; iters < viewservice.DeadPings*2; iters++ {
     view, _ := vck.Get()
     if view.Primary == view1.Backup {
@@ -378,12 +362,10 @@ func TestConcurrent(t *testing.T) {
     }
     time.Sleep(viewservice.PingInterval)
   }
-	log.Printf("Passed 4")
   view2, _ := vck.Get()
   if view2.Primary != view1.Backup {
     t.Fatal("wrong Primary")
   }
-	log.Printf("Passed 5")
 
   // read from old backup
   for i := 0; i < nkeys; i++ {
@@ -428,8 +410,7 @@ func TestConcurrentSameUnreliable(t *testing.T) {
     }
     time.Sleep(viewservice.PingInterval)
   }
-	log.Printf("Passed 1")
-  
+
   // give p+b time to ack, initialize
   time.Sleep(viewservice.PingInterval * viewservice.DeadPings)
 
@@ -449,7 +430,6 @@ func TestConcurrentSameUnreliable(t *testing.T) {
       }
     }(xi)
   }
-	log.Printf("Passed 2")
 
   time.Sleep(5 * time.Second)
   done = true
@@ -472,7 +452,6 @@ func TestConcurrentSameUnreliable(t *testing.T) {
       break
     }
   }
-	log.Printf("Passed 3")
   for iters := 0; iters < viewservice.DeadPings*2; iters++ {
     view, _ := vck.Get()
     if view.Primary == view1.Backup {
@@ -484,7 +463,6 @@ func TestConcurrentSameUnreliable(t *testing.T) {
   if view2.Primary != view1.Backup {
     t.Fatal("wrong Primary")
   }
-	log.Printf("Passed 4")
 
   // read from old backup
   for i := 0; i < nkeys; i++ {
@@ -514,7 +492,7 @@ func TestRepeatedCrash(t *testing.T) {
   vs := viewservice.StartServer(vshost)
   time.Sleep(time.Second)
   vck := viewservice.MakeClerk("", vshost)
-  
+
   fmt.Printf("Test: Repeated failures/restarts ...\n")
 
   const nservers = 3
@@ -576,7 +554,7 @@ func TestRepeatedCrash(t *testing.T) {
         nv := strconv.Itoa(rr.Int())
         ck.Put(k, nv)
         data[k] = nv
-        // if no sleep here, then server tick() threads do not get 
+        // if no sleep here, then server tick() threads do not get
         // enough time to Ping the viewserver.
         time.Sleep(10 * time.Millisecond)
       }
@@ -620,7 +598,7 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
   vs := viewservice.StartServer(vshost)
   time.Sleep(time.Second)
   vck := viewservice.MakeClerk("", vshost)
-  
+
   fmt.Printf("Test: Repeated failures/restarts; unreliable ...\n")
 
   const nservers = 3
@@ -674,6 +652,7 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
       k := strconv.Itoa(i)
       data[k] = ""
       n := 0
+      fmt.Printf("[TestRepeatedCrashUnreliable]: iteration %d", n)
       for done == false {
         v := strconv.Itoa(n)
         pv := ck.PutHash(k, v)
@@ -686,7 +665,7 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
         if v != data[k] {
           t.Fatalf("ck.Get(%s) returned %v but expected %v at iter %d\n", k, v, data[k], n)
         }
-        // if no sleep here, then server tick() threads do not get 
+        // if no sleep here, then server tick() threads do not get
         // enough time to Ping the viewserver.
         time.Sleep(10 * time.Millisecond)
         n++
@@ -748,7 +727,7 @@ func proxy(t *testing.T, port string, delay *int) {
       if err != nil {
         t.Fatalf("proxy dial failed: %v\n", err)
       }
-      
+
       go func() {
         for {
           buf := make([]byte, 1000)
@@ -776,7 +755,7 @@ func proxy(t *testing.T, port string, delay *int) {
           t.Fatalf("proxy c2.Write: %v\n", err1)
         }
       }
-      
+
       c1.Close()
       c2.Close()
     }
@@ -815,7 +794,7 @@ func TestPartition1(t *testing.T) {
   if v1.Primary != s1.me || v1.Backup != s2.me {
     t.Fatal("backup did not join view")
   }
-  
+
   ck1.Put("a", "1")
   check(ck1, "a", "1")
 
@@ -903,7 +882,7 @@ func TestPartition2(t *testing.T) {
   if v1.Primary != s1.me || v1.Backup != s2.me {
     t.Fatal("backup did not join view")
   }
-  
+
   ck1.Put("a", "1")
   check(ck1, "a", "1")
 
@@ -968,4 +947,119 @@ func TestPartition2(t *testing.T) {
   s2.kill()
   s3.kill()
   vs.Kill()
+}
+
+
+
+
+func TestOwn(t *testing.T) {
+  runtime.GOMAXPROCS(4)
+
+  tag := "rcu"
+  vshost := port(tag+"v", 1)
+  vs := viewservice.StartServer(vshost)
+  time.Sleep(time.Second)
+  vck := viewservice.MakeClerk("", vshost)
+
+  fmt.Printf("Test: Repeated failures/restarts; unreliable ...\n")
+
+  const nservers = 3
+  var sa [nservers]*PBServer
+  for i := 0; i < nservers; i++ {
+    sa[i] = StartServer(vshost, port(tag, i+1))
+    sa[i].unreliable = true
+  }
+
+  for i := 0; i < viewservice.DeadPings; i++ {
+    v, _ := vck.Get()
+    if v.Primary != "" && v.Backup != "" {
+      break
+    }
+    time.Sleep(viewservice.PingInterval)
+  }
+
+  // wait a bit for primary to initialize backup
+  time.Sleep(viewservice.DeadPings * viewservice.PingInterval)
+
+  done := false
+
+  go func() {
+    // kill and restart servers
+    rr := rand.New(rand.NewSource(int64(os.Getpid())))
+    for done == false {
+      i := rr.Int() % nservers
+      // fmt.Printf("%v killing %v\n", ts(), 5001+i)
+      sa[i].kill()
+
+      // wait long enough for new view to form, backup to be initialized
+      time.Sleep(2 * viewservice.PingInterval * viewservice.DeadPings)
+
+      sa[i] = StartServer(vshost, port(tag, i+1))
+
+      // wait long enough for new view to form, backup to be initialized
+      time.Sleep(2 * viewservice.PingInterval * viewservice.DeadPings)
+    }
+  } ()
+
+  const nth = 2
+  var cha [nth]chan bool
+  for xi := 0; xi < nth; xi++ {
+    cha[xi] = make(chan bool)
+    go func(i int) {
+      ok := false
+      defer func() { cha[i] <- ok } ()
+      ck := MakeClerk(vshost, "")
+      data := map[string]string{}
+      // rr := rand.New(rand.NewSource(int64(os.Getpid()+i)))
+      k := strconv.Itoa(i)
+      data[k] = ""
+      n := 0
+      for done == false {
+        v := strconv.Itoa(n)
+        pv := ck.PutHash(k, v)
+        if pv != data[k] {
+          t.Fatalf("ck.Puthash(%s) returned %v but expected %v at iter %d\n", k, pv, data[k], n)
+        }
+        h := hash(data[k] + v)
+        data[k] = strconv.Itoa(int(h))
+        v = ck.Get(k)
+        if v != data[k] {
+          t.Fatalf("ck.Get(%s) returned %v but expected %v at iter %d\n", k, v, data[k], n)
+        }
+        // if no sleep here, then server tick() threads do not get
+        // enough time to Ping the viewserver.
+        time.Sleep(10 * time.Millisecond)
+        n++
+      }
+      ok = true
+
+    }(xi)
+  }
+
+  time.Sleep(20 * time.Second)
+  done = true
+
+  fmt.Printf("  ... Put/Gets done ... \n")
+
+  for i := 0; i < nth; i++ {
+    ok := <- cha[i]
+    if ok == false {
+      t.Fatal("child failed")
+    }
+  }
+
+  ck := MakeClerk(vshost, "")
+  ck.Put("aaa", "bbb")
+  if v := ck.Get("aaa"); v != "bbb" {
+    t.Fatalf("final Put/Get failed")
+  }
+
+  fmt.Printf("  ... Passed\n")
+
+  for i := 0; i < nservers; i++ {
+    sa[i].kill()
+  }
+  time.Sleep(time.Second)
+  vs.Kill()
+  time.Sleep(time.Second)
 }
