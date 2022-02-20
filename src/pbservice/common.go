@@ -31,7 +31,7 @@ type PutReply struct {
 type GetArgs struct {
   Key string
   // You'll have to add definitions here.
-	GetID int64
+  GetID int64
 }
 
 
@@ -42,13 +42,15 @@ type GetReply struct {
 
 
 // Your RPC definitions here.
-type ReplicateReply struct {
-  Err Err
-	Data map[string]string
+type TransferReply struct {
+	Me string
 }
 
-type ReplicateArgs struct {
-	Me string
+type TransferArgs struct {
+  Err Err
+	Data map[string]string
+	PutReplyLog map[int64]PutReply
+	GetReplyLog map[int64]GetReply
 }
 
 func hash(s string) uint32 {

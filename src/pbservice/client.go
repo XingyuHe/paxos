@@ -1,12 +1,12 @@
 package pbservice
 
 import (
+	"crypto/rand"
 	"fmt"
 	"log"
+	"math/big"
 	"net/rpc"
 	"viewservice"
-	"crypto/rand"
-	"math/big"
 )
 
 // You'll probably need to uncomment these:
@@ -55,7 +55,7 @@ func call(srv string, rpcname string,
     return false
   }
   defer c.Close()
-    
+
   err := c.Call(rpcname, args, reply)
   if err == nil {
     return true
@@ -75,19 +75,21 @@ func call(srv string, rpcname string,
 func (ck *Clerk) Get(key string) string {
 
   // Your code here.
-	getID := getUniqueNumber()
-	args := &GetArgs{Key: key, GetID: getID}
-	var reply GetReply
+	args := &GetArgs{Key: key, GetID: getUniqueNumber()}
 
 	for {
+		reply := GetReply{}
 		ok := call(ck.vs.Primary(), "PBServer.Get", args, &reply)
-		if ok && reply.Err == Err(""){
-			log.Printf("\tPut succeeded")
-			return reply.Value
-		} else {
-			newView, ok := ck.vs.Get()
-			if ok {
-				ck.view = newView
+		if ok {
+
+			switch reply.Err {
+			case ErrWrongServer:
+				newView, ok := ck.vs.Get()
+				if ok {
+					ck.view = newView
+				}
+			default:
+				return reply.Value
 			}
 		}
 	}
@@ -112,19 +114,23 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	putID := getUniqueNumber()
 	log.Printf("[PutExt]:")
 	args := &PutArgs{Key: key, Value: value, DoHash: dohash, PutID: putID}
-	args.Printf()
-	reply := &PutReply{}
   for {
-		log.Printf("\tcalling server %s", ck.view.Primary)
-		ok := call(ck.view.Primary, "PBServer.Put", args, reply) 
-		if ok && reply.Err == Err(""){
-			log.Printf("\tPut succeeded")
-			return reply.PreviousValue
-		} else {
-			newView, ok := ck.vs.Get()
-			if ok {
-				ck.view = newView
+		reply := &PutReply{}
+		ok := call(ck.vs.Primary(), "PBServer.Put", args, reply)
+
+		if ok {
+
+			switch reply.Err {
+			case ErrWrongServer:
+				newView, ok := ck.vs.Get()
+				if ok {
+					ck.view = newView
+				}
+			default:
+				log.Printf("[PutExt]: Put succeeded")
+				return reply.PreviousValue
 			}
+
 		}
 
 		log.Printf("\tPut failed")

@@ -43,7 +43,7 @@ func call(srv string, rpcname string,
     return false
   }
   defer c.Close()
-    
+
   err := c.Call(rpcname, args, reply)
   if err == nil {
     return true
@@ -81,7 +81,6 @@ func (ck *Clerk) Get() (View, bool) {
 
 func (ck *Clerk) Primary() string {
   v, ok := ck.Get()
-	v.Printf()
   if ok {
     return v.Primary
   }
@@ -90,7 +89,6 @@ func (ck *Clerk) Primary() string {
 
 func (ck *Clerk) Backup() string {
   v, ok := ck.Get()
-	v.Printf()
   if ok {
     return v.Backup
   }
