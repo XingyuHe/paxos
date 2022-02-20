@@ -652,7 +652,7 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
       k := strconv.Itoa(i)
       data[k] = ""
       n := 0
-      fmt.Printf("[TestRepeatedCrashUnreliable]: iteration %d", n)
+      // fmt.Printf("[TestRepeatedCrashUnreliable]: iteration %d", n)
       for done == false {
         v := strconv.Itoa(n)
         pv := ck.PutHash(k, v)

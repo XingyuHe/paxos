@@ -8,7 +8,7 @@ import "time"
 import "sync"
 import "fmt"
 import "os"
-/* 
+/*
 
 
 immutable: LastViewToPrimary
@@ -43,13 +43,13 @@ func (vs *ViewServer) PrintViews() {
 	log.Printf("--------------------------------")
 }
 
-/* 
+/*
 
-Cases when a new view is needed: 
+Cases when a new view is needed:
 1. Primary didn't Ping in time
 2. Backup didn't Ping in time
 3. There is no primary
-4. There is no backup 
+4. There is no backup
 
 */
 func (vs *ViewServer) BuildNewView(primary string, backup string) *View {
@@ -61,13 +61,13 @@ func (vs *ViewServer) BuildNewView(primary string, backup string) *View {
 	if vs.lastViewToPrimary == nil {
 		newView.Viewnum = 1
 	} else {
-		newView.Viewnum = vs.lastViewToPrimary.Viewnum + 1 
+		newView.Viewnum = vs.lastViewToPrimary.Viewnum + 1
 	}
 	return newView
 }
 
 func (vs *ViewServer) IsNew() bool {
-	return vs.lastViewToPrimary == nil 
+	return vs.lastViewToPrimary == nil
 }
 
 func (vs *ViewServer) BackupRestarted(args *PingArgs) bool {
@@ -96,7 +96,7 @@ func (vs *ViewServer) BackupFrozen() bool {
 
 func (vs *ViewServer) HasNoBackup() bool {
 	if vs.IsNew() {
-		return false 
+		return false
 	} else {
 		return vs.lastViewToPrimary.Backup == ""
 	}
@@ -129,10 +129,11 @@ func (vs *ViewServer) ACKed(view *View) bool {
 }
 
 //
-// server Ping RPC handler. 
+// server Ping RPC handler.
 // return view
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
+	vs.mu.Lock(); defer vs.mu.Unlock()
 	log.Printf("[Ping]: before =================================================")
 	args.Printf()
 	vs.PrintViews()
@@ -141,7 +142,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		return fmt.Errorf("large view number")
 	}
 
-	if vs.IsNew() { 
+	if vs.IsNew() {
 		// there is no view formed yet, change new view
 		vs.ACKLastView(args)
 		newView := vs.BuildNewView(args.Me, "")
@@ -151,11 +152,11 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 		if args.Viewnum == 0 {// primary crashed before the tick
 
-			if vs.ACKableServer(args.Me) { // old primary crashed 
+			if vs.ACKableServer(args.Me) { // old primary crashed
 				if vs.lastViewToPrimary.Backup == "" { // no candidate for primary
 					// log.Printf("[Ping]: no candidate for primary in the lastViewToPrimary, DEAD")
 					vs.dead = true
-				} else { // there is backup 
+				} else { // there is backup
 					newView := vs.BuildNewView(vs.lastViewToPrimary.Backup, "")
 					vs.ACKLastView(args)
 					vs.PrintViews()
@@ -163,7 +164,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 					vs.PrintViews()
 				}
 			}
-		} else { // no primary is crashed 
+		} else { // no primary is crashed
 			if vs.ACKableServer(args.Me) {
 				vs.ACKLastView(args)
 			}
@@ -179,8 +180,8 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 			// vs.PrintIdleServers()
 		}
 	}
-	
-	
+
+
 	vs.updatePingTime(args)
 
 	// 3. return
@@ -193,14 +194,15 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
   return nil
 }
 
-// 
+//
 // server Get() RPC handler.
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
+	vs.mu.Lock(); defer vs.mu.Unlock()
   // Your code here.
 	if vs.lastViewToPrimary != nil {
-		reply.View = *vs.lastViewToPrimary	
+		reply.View = *vs.lastViewToPrimary
 	}
   return nil
 }
@@ -220,10 +222,11 @@ func (vs *ViewServer) isFrozen(server string) bool {
 //
 func (vs *ViewServer) tick() {
 
+	vs.mu.Lock(); defer vs.mu.Unlock()
 	// Your code here.
 	log.Printf("[tick: start]")
 	vs.PrintViews()
-	if !vs.IsNew() && 
+	if !vs.IsNew() &&
 			vs.ACKed(vs.lastViewToPrimary) &&
 			vs.isFrozen(vs.lastViewToPrimary.Primary) {
 

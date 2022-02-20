@@ -12,12 +12,19 @@ const (
 )
 type Err string
 
+type ForwardPutArgs struct {
+  Key string
+  Value string
+  PutID int64
+}
+
 type PutArgs struct {
   Key string
   Value string
   DoHash bool // For PutHash
   // You'll have to add definitions here.
 	PutID int64
+  CorrectPreVal string
 
   // Field names must start with capital letters,
   // otherwise RPC will break.
