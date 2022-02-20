@@ -112,7 +112,7 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	// TODO: not sure if it's okay to use ck.vs.Primary() rather than keep track of primary by self
 	// generate PutExt ID
 	putID := getUniqueNumber()
-	log.Printf("[PutExt]:")
+	// log.Printf("[PutExt]:")
 	args := &PutArgs{Key: key, Value: value, DoHash: dohash, PutID: putID}
   for {
 		reply := &PutReply{}
@@ -127,13 +127,13 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 					ck.view = newView
 				}
 			default:
-				log.Printf("[PutExt]: Put succeeded")
+				// log.Printf("[PutExt]: Put succeeded")
 				return reply.PreviousValue
 			}
 
 		}
 
-		log.Printf("\tPut failed")
+		// log.Printf("\tPut failed")
 	}
 }
 

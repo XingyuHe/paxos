@@ -42,15 +42,7 @@ type PBServer struct {
 
 	data map[string]string
 	putReplyLog map[int64]PutReply
-<<<<<<< HEAD
-	putReplyLogLock sync.RWMutex
-
 	getReplyLog map[int64]GetReply
-	getReplyLogLock sync.RWMutex
-
-=======
-	getReplyLog map[int64]GetReply
->>>>>>> HW2-PARTB-REDO
 	view viewservice.View
 	opCount int64
 }
@@ -98,26 +90,15 @@ func (pb *PBServer) GetCompleteBits() {
 }
 
 // printing
-<<<<<<< HEAD
-func (pb *PBServer) PrintfData() {
-	log.Printf("\t[PrintfData] start")
-=======
 func (pb *PBServer) printfData() {
->>>>>>> HW2-PARTB-REDO
 	for k, v := range pb.data {
 		log.Printf("\t(%s, %s)", k, v)
 	}
 	log.Printf("\t[PrintfData] end")
 }
 
-<<<<<<< HEAD
-
-/* 
-protocol: 
-=======
 /*
 protocol:
->>>>>>> HW2-PARTB-REDO
 1. send the call to back up
 2. wait for backup to reply
 3. if backup replies with error
@@ -126,30 +107,12 @@ protocol:
 */
 
 func (pb *PBServer) ForwardPut(args *PutArgs, reply *PutReply) error {
-<<<<<<< HEAD
-	log.Printf("[ForwardPut]: (%s, %s) at server %s", args.Key, args.Value, pb.me)
-	pb.putReplyLogLock.Lock(); defer pb.putReplyLogLock.Unlock()
-	pb.dataLock.Lock(); defer pb.dataLock.Unlock()
-	pb.viewLock.RLock(); defer pb.viewLock.RUnlock()
-
-	if pb.IsBackup() {
-
-		if prevReply, ok := pb.putReplyLog[args.PutID]; ok {
-			*reply = prevReply
-			return nil
-		}
-
-		reply.PreviousValue = pb.GetData(args.Key)
-		pb.PutData(args.Key, args.Value, args.DoHash)
-		log.Printf("\t[ForwardPut]: putdata completed")
-=======
 	pb.lock.Lock(); defer pb.lock.Unlock()
 	log.Printf("[ForwardPut]: (%s, %s) at server %s, %d", args.Key, args.Value, pb.me, args.PutID)
 
 	if !pb.isBackup() {
 		log.Printf("[ForwardPut]: not back up at server %s, %d", pb.me, args.PutID)
 		reply.Err = ErrWrongServer
->>>>>>> HW2-PARTB-REDO
 		return nil
 	}
 
@@ -174,20 +137,10 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 	log.Printf("[Put]: at server %s, id; %d", pb.me, args.PutID)
 	args.Printf()
 
-<<<<<<< HEAD
-	pb.putReplyLogLock.Lock(); defer pb.putReplyLogLock.Unlock()
-	pb.dataLock.Lock(); defer pb.dataLock.Unlock()
-	pb.viewLock.RLock(); defer pb.viewLock.RUnlock()
-
-	if !pb.IsPrimary() {
-		reply.Err = Err("wrong primary")
-		return fmt.Errorf("server %s is not a primary server", pb.me)
-=======
 	if !pb.isPrimary() {
 		log.Printf("[Put]: at server %s, not primary, id: %d", pb.me, args.PutID)
 		reply.Err = ErrWrongServer
 		return nil
->>>>>>> HW2-PARTB-REDO
 	}
 
 	if prevReply, ok := pb.putReplyLog[args.PutID]; ok {
@@ -195,10 +148,6 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 		return nil
 	}
 
-<<<<<<< HEAD
-=======
-
->>>>>>> HW2-PARTB-REDO
 	backupReply := &PutReply{}
 	// do forward call if pb has backup
 	if pb.hasBackup() {
@@ -216,21 +165,13 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 		log.Printf("[Put]: finishing forward put, %d", args.PutID)
 	}
-<<<<<<< HEAD
-	log.Printf("\t[Put]: finishing forward put")
-=======
->>>>>>> HW2-PARTB-REDO
 
 	// if backup succeeds || no back up
 	if backupReply.Err == "" {
 		reply.PreviousValue = pb.getData(args.Key)
 		pb.putData(args.Key, args.Value, args.DoHash)
 		pb.putReplyLog[args.PutID] = *reply
-<<<<<<< HEAD
-		log.Printf("\t[Put]: finished putting data")
-=======
 		log.Printf("[Put]: finished putting data, %d", args.PutID)
->>>>>>> HW2-PARTB-REDO
 	}
 	return nil
 }
@@ -238,17 +179,8 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 func (pb *PBServer) ForwardGet(args *GetArgs, reply *GetReply) error {
 	pb.lock.Lock(); defer pb.lock.Unlock()
 	log.Printf("[ForwardGet]: server: %s", viewservice.GetCleanName(pb.me))
-<<<<<<< HEAD
-	log.Printf("\t[ForwardGet] args: %v\n", args)
-	pb.dataLock.RLock(); defer pb.dataLock.RUnlock()
-	pb.PrintfData()
-
-	if pb.IsBackup() {
-		reply.Value = pb.GetData(args.Key)
-=======
 
 	if pb.isBackup() {
->>>>>>> HW2-PARTB-REDO
 		return nil
 	} else {
 		reply.Err = ErrWrongServer
@@ -260,35 +192,6 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
   // Your code here.
 	pb.lock.Lock(); defer pb.lock.Unlock()
 	log.Printf("[Get]: server: %s", viewservice.GetCleanName(pb.me))
-<<<<<<< HEAD
-	log.Printf("\t[Get] args: %v\n", args)
-	pb.dataLock.RLock(); defer pb.dataLock.RUnlock()
-	pb.viewLock.RLock(); defer pb.viewLock.RUnlock()
-	pb.getReplyLogLock.Lock(); defer pb.getReplyLogLock.Unlock()
-	pb.PrintfData()
-
-	if !pb.IsPrimary() {
-		reply.Err = Err("wrong primary")
-		return fmt.Errorf("server %s is not a primary server", pb.me)
-	}
-
-	if prevReply, ok := pb.getReplyLog[args.GetID]; ok {
-		*reply = prevReply 
-		return nil
-	}
-
-	backupReply := &GetReply{}
-	if pb.HasBackup() {
-		ok := call(pb.GetBackup(), "PBServer.ForwardGet", args, backupReply)
-		if !ok {
-			return fmt.Errorf("server %s not respond", pb.GetBackup())
-		} 
-	}
-	
-	currData := pb.GetData(args.Key)
-	if backupReply.Err == "" && currData == backupReply.Value {
-		reply.Value = currData
-=======
 
 	if !pb.isPrimary() {
 		reply.Err = ErrWrongServer
@@ -310,7 +213,6 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	if backupReply.Err == "" {
 		// backup receive and responds || no backup
 		reply.Value = pb.getData(args.Key)
->>>>>>> HW2-PARTB-REDO
 		return nil
 	} else {
 		// backup receive and responds with error
@@ -320,15 +222,9 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 }
 
 
-<<<<<<< HEAD
-func (pb *PBServer) Replicate(args *ReplicateArgs, reply *ReplicateReply) error {
-	log.Printf("[Replicate]: source server: %s", viewservice.GetCleanName(pb.me))
-	pb.dataLock.RLock(); defer pb.dataLock.RUnlock()
-=======
 func (pb *PBServer) Transfer(args *TransferArgs, reply *TransferReply) error {
 	pb.lock.Lock(); defer pb.lock.Unlock()
 	log.Printf("[Replicate]: incoming data")
->>>>>>> HW2-PARTB-REDO
 
 	pb.delete()
 
@@ -367,35 +263,6 @@ func (pb *PBServer) assignNewView(newView viewservice.View) {
 // 2. assigned as backup
 func (pb *PBServer) tick() {
   // Your code here.
-<<<<<<< HEAD
-	pb.dataLock.Lock(); defer pb.dataLock.Unlock()
-	pb.viewLock.Lock(); defer pb.viewLock.Unlock()
-	newView, _ := pb.vs.Ping(pb.view.Viewnum)
-
-
-	// idle to backup: copy all the things from primary
-	if pb.IdleToBackup(&newView) || pb.BackupToBackup(&newView) {
-		log.Printf("[tick] at server %s", viewservice.GetCleanName(pb.me))
-		log.Printf("\t[tick]: Transferred data")
-		args := &ReplicateArgs{}
-		reply := &ReplicateReply{}
-		reply.Data = make(map[string]string)
-		call(newView.Primary, "PBServer.Replicate", args, reply)
-		pb.DeleteData()
-
-		for key, val := range reply.Data {
-			pb.data[key] = val
-		}
-		pb.PrintfData()
-
-	} else if pb.IsBackup() && newView.Primary == pb.me {
-		log.Printf("[tick] at server %s", viewservice.GetCleanName(pb.me))
-		// backup to primary
-	} else if pb.IsPrimary() && newView.Primary != pb.me {
-		log.Printf("[tick] at server %s", viewservice.GetCleanName(pb.me))
-		// primary to idle
-		pb.DeleteData()
-=======
 	pb.lock.Lock(); defer pb.lock.Unlock()
 	newView, _ := pb.vs.Ping(pb.view.Viewnum)
 	defer pb.assignNewView(newView)
@@ -437,7 +304,6 @@ func (pb *PBServer) tick() {
 				}
 			}
 		}
->>>>>>> HW2-PARTB-REDO
 	}
 }
 
@@ -479,11 +345,7 @@ func StartServer(vshost string, me string) *PBServer {
       if err == nil && pb.dead == false {
         if pb.unreliable && (rand.Int63() % 1000) < 100 {
           // discard the request.
-<<<<<<< HEAD
-					log.Printf("[StartServer]: discard request, unrealiable")
-=======
 					log.Printf("[StartServer] discard the request, server: %s", pb.me)
->>>>>>> HW2-PARTB-REDO
           conn.Close()
         } else if pb.unreliable && (rand.Int63() % 1000) < 200 {
           // process the request but force discard of reply.
