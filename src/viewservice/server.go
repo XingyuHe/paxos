@@ -65,7 +65,7 @@ func (vs *ViewServer) buildNewView(primary string, backup string) *View {
 	return newView
 }
 
-func (vs *ViewServer) isNew() bool {
+func (vs *ViewServer) IsNew() bool {
 	return vs.lastViewToPrimary == nil
 }
 
@@ -93,8 +93,8 @@ func (vs *ViewServer) backupFrozen() bool {
 	return vs.isFrozen(vs.lastViewToPrimary.Backup)
 }
 
-func (vs *ViewServer) hasNoBackup() bool {
-	if vs.isNew() {
+func (vs *ViewServer) HasNoBackup() bool {
+	if vs.IsNew() {
 		return false
 	} else {
 		return vs.lastViewToPrimary.Backup == ""
@@ -132,17 +132,16 @@ func (vs *ViewServer) acked(view *View) bool {
 // return view
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
-	// log.Printf("[Ping]: before =================================================")
-	// args.Printf()
-	// vs.PrintViews()
-
 	vs.mu.Lock(); defer vs.mu.Unlock()
+	log.Printf("[Ping]: before =================================================")
+	args.Printf()
+	vs.PrintViews()
 
 	if !vs.isNew() && vs.lastViewToPrimary.Viewnum < args.Viewnum {
 		return fmt.Errorf("large view number")
 	}
 
-	if vs.isNew() {
+	if vs.IsNew() {
 		// there is no view formed yet, change new view
 		vs.ackLastView(args)
 		newView := vs.buildNewView(args.Me, "")
@@ -152,21 +151,21 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 		if args.Viewnum == 0 {// primary crashed before the tick
 
-			if vs.ackAbleServer(args.Me) { // old primary crashed
+			if vs.ACKableServer(args.Me) { // old primary crashed
 				if vs.lastViewToPrimary.Backup == "" { // no candidate for primary
 					// log.Printf("[Ping]: no candidate for primary in the lastViewToPrimary, DEAD")
 					vs.dead = true
 				} else { // there is backup
-					newView := vs.buildNewView(vs.lastViewToPrimary.Backup, "")
-					vs.ackLastView(args)
-					// vs.PrintViews()
+					newView := vs.BuildNewView(vs.lastViewToPrimary.Backup, "")
+					vs.ACKLastView(args)
+					vs.PrintViews()
 					vs.updateLastViewToPrimary(newView)
 					// vs.PrintViews()
 				}
 			}
 		} else { // no primary is crashed
-			if vs.ackAbleServer(args.Me) {
-				vs.ackLastView(args)
+			if vs.ACKableServer(args.Me) {
+				vs.ACKLastView(args)
 			}
 		}
 	} else {
@@ -199,6 +198,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
+	vs.mu.Lock(); defer vs.mu.Unlock()
   // Your code here.
 	vs.mu.Lock(); defer vs.mu.Unlock()
 	if vs.lastViewToPrimary != nil {
@@ -223,13 +223,12 @@ func (vs *ViewServer) isFrozen(server string) bool {
 func (vs *ViewServer) tick() {
 	vs.mu.Lock(); defer vs.mu.Unlock()
 
-	// Your code here.
-	// log.Printf("[tick: start]")
-	// vs.PrintViews()
 	vs.mu.Lock(); defer vs.mu.Unlock()
-
-	if !vs.isNew() &&
-			vs.acked(vs.lastViewToPrimary) &&
+	// Your code here.
+	log.Printf("[tick: start]")
+	vs.PrintViews()
+	if !vs.IsNew() &&
+			vs.ACKed(vs.lastViewToPrimary) &&
 			vs.isFrozen(vs.lastViewToPrimary.Primary) {
 
 		if vs.lastViewToPrimary.Backup == "" || vs.isFrozen(vs.lastViewToPrimary.Backup) {

@@ -116,6 +116,7 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	args := &PutArgs{Key: key, Value: value, DoHash: dohash, PutID: putID}
   for {
 		reply := &PutReply{}
+		log.Printf("[PutExt]: begin with putId %d", putID)
 		ok := call(ck.vs.Primary(), "PBServer.Put", args, reply)
 
 		if ok {
@@ -127,13 +128,13 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 					ck.view = newView
 				}
 			default:
-				// log.Printf("[PutExt]: Put succeeded")
+				log.Printf("[PutExt]: Put succeeded, %d", putID)
 				return reply.PreviousValue
 			}
 
 		}
 
-		// log.Printf("[PutExt]: Put failed")
+		log.Printf("[PutExt]: Put failed, %d", putID)
 	}
 }
 
