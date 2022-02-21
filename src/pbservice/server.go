@@ -19,6 +19,8 @@ import (
 
 // Debugging
 const Debug = 0
+const PutCompleteMask = 1
+const ForwardCompleteMask = 2
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
   if Debug > 0 {
@@ -86,11 +88,17 @@ func (pb *PBServer) getData(key string) string {
 	return pb.data[key]
 }
 
+// bits
+func (pb *PBServer) GetCompleteBits() {
+
+}
+
 // printing
 func (pb *PBServer) printfData() {
 	for k, v := range pb.data {
 		log.Printf("\t(%s, %s)", k, v)
 	}
+	log.Printf("\t[PrintfData] end")
 }
 
 /*
@@ -139,7 +147,6 @@ func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 		*reply = prevReply
 		return nil
 	}
-
 
 	backupReply := &PutReply{}
 	// do forward call if pb has backup
