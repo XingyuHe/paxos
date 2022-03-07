@@ -211,7 +211,7 @@ func TestForget(t *testing.T) {
   var pxa []*Paxos = make([]*Paxos, npaxos)
   var pxh []string = make([]string, npaxos)
   defer cleanup(pxa)
-  
+
   for i := 0; i < npaxos; i++ {
     pxh[i] = port("gc", i)
   }
@@ -270,6 +270,7 @@ func TestForget(t *testing.T) {
     allok = true
     for i := 0; i < npaxos; i++ {
       s := pxa[i].Min()
+      fmt.Printf("-- pxa i: %v has Min() %v\n", i, s)
       if s != 1 {
         allok = false
       }
@@ -293,7 +294,7 @@ func TestManyForget(t *testing.T) {
   var pxa []*Paxos = make([]*Paxos, npaxos)
   var pxh []string = make([]string, npaxos)
   defer cleanup(pxa)
-  
+
   for i := 0; i < npaxos; i++ {
     pxh[i] = port("manygc", i)
   }
@@ -307,17 +308,19 @@ func TestManyForget(t *testing.T) {
   const maxseq = 20
   done := false
 
+  // randomly call Start() for random servers for random values
   go func() {
     na := rand.Perm(maxseq)
     for i := 0; i < len(na); i++ {
       seq := na[i]
       j := (rand.Int() % npaxos)
-      v := rand.Int() 
+      v := rand.Int()
       pxa[j].Start(seq, v)
       runtime.Gosched()
     }
   }()
 
+  // randomly call Done(x) on decided x paxo instance
   go func() {
     for done == false {
       seq := (rand.Int() % maxseq)
@@ -338,6 +341,7 @@ func TestManyForget(t *testing.T) {
     pxa[i].unreliable = false
   }
   time.Sleep(2 * time.Second)
+
 
   for seq := 0; seq < maxseq; seq++ {
     for i := 0; i < npaxos; i++ {
@@ -362,7 +366,7 @@ func TestForgetMem(t *testing.T) {
   var pxa []*Paxos = make([]*Paxos, npaxos)
   var pxh []string = make([]string, npaxos)
   defer cleanup(pxa)
-  
+
   for i := 0; i < npaxos; i++ {
     pxh[i] = port("gcmem", i)
   }
@@ -378,14 +382,17 @@ func TestForgetMem(t *testing.T) {
   runtime.ReadMemStats(&m0)
   // m0.Alloc about a megabyte
 
+  // Start(1...10, big_i)
   for i := 1; i <= 10; i++ {
     big := make([]byte, 1000000)
     for j := 0; j < len(big); j++ {
       big[j] = byte('a' + rand.Int() % 26)
     }
+    fmt.Printf("Test 0, i %v \n", i)
     pxa[0].Start(i, string(big))
     waitn(t, pxa, i, npaxos)
   }
+  fmt.Printf("Test 1\n")
 
   runtime.GC()
   var m1 runtime.MemStats
@@ -395,15 +402,18 @@ func TestForgetMem(t *testing.T) {
   for i := 0; i < npaxos; i++ {
     pxa[i].Done(10)
   }
+  fmt.Printf("Test 2\n")
   for i := 0; i < npaxos; i++ {
     pxa[i].Start(11 + i, "z")
   }
+  fmt.Printf("Test 3\n")
   time.Sleep(3 * time.Second)
   for i := 0; i < npaxos; i++ {
     if pxa[i].Min() != 11 {
       t.Fatalf("expected Min() %v, got %v\n", 11, pxa[i].Min())
     }
   }
+  fmt.Printf("Test 4\n")
 
   runtime.GC()
   var m2 runtime.MemStats
@@ -413,6 +423,7 @@ func TestForgetMem(t *testing.T) {
   if m2.Alloc > (m1.Alloc / 2) {
     t.Fatalf("memory use did not shrink enough")
   }
+  fmt.Printf("Test 5\n")
 
   fmt.Printf("  ... Passed\n")
 }
@@ -519,13 +530,16 @@ func TestMany(t *testing.T) {
     }
     for i := 0; i < npaxos; i++ {
       pxa[i].Start(seq, (seq * 10) + i)
+      fmt.Printf("Test: peer %v seq %v val %v\n", i, seq, (seq * 10) + i)
     }
   }
 
   for {
     done := true
     for seq := 1; seq < ninst; seq++ {
-      if ndecided(t, pxa, seq) < npaxos {
+      agreed := ndecided(t, pxa, seq)
+      if agreed < npaxos {
+        fmt.Printf("Test: seq %v agreed by %v peers \n", seq, agreed)
         done = false
       }
     }
@@ -541,7 +555,7 @@ func TestMany(t *testing.T) {
 //
 // a peer starts up, with proposal, after others decide.
 // then another peer starts, without a proposal.
-// 
+//
 func TestOld(t *testing.T) {
   runtime.GOMAXPROCS(4)
 
@@ -622,7 +636,7 @@ func TestManyUnreliable(t *testing.T) {
     }
     time.Sleep(100 * time.Millisecond)
   }
-  
+
   fmt.Printf("  ... Passed\n")
 }
 
@@ -696,7 +710,7 @@ func TestPartition(t *testing.T) {
   part(t, tag, npaxos, []int{0,2}, []int{1,3}, []int{4})
   pxa[1].Start(seq, 111)
   checkmax(t, pxa, seq, 0)
-  
+
   fmt.Printf("  ... Passed\n")
 
   fmt.Printf("Test: Decision in majority partition ...\n")
@@ -729,7 +743,7 @@ func TestPartition(t *testing.T) {
     if ndecided(t, pxa, seq) > 3 {
       t.Fatalf("too many decided")
     }
-    
+
     part(t, tag, npaxos, []int{0,1}, []int{2,3,4}, []int{})
     waitn(t, pxa, seq, npaxos)
   }
@@ -754,7 +768,7 @@ func TestPartition(t *testing.T) {
     if ndecided(t, pxa, seq) > 3 {
       t.Fatalf("too many decided")
     }
-    
+
     part(t, tag, npaxos, []int{0,1}, []int{2,3,4}, []int{})
 
     for i := 0; i < npaxos; i++ {

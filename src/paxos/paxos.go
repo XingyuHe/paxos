@@ -28,7 +28,12 @@ import "syscall"
 import "sync"
 import "fmt"
 import "math/rand"
+import "encoding/gob"
 
+type Num struct {
+  server int
+  round int
+}
 
 type Paxos struct {
   mu sync.Mutex
@@ -41,6 +46,10 @@ type Paxos struct {
 
 
   // Your data here.
+  seqToState map[int]*PaxosState
+  minDone int
+  maxDone int
+  peerDone []int
 }
 
 //
@@ -69,7 +78,7 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
     return false
   }
   defer c.Close()
-    
+
   err = c.Call(name, args, reply)
   if err == nil {
     return true
@@ -89,6 +98,15 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 //
 func (px *Paxos) Start(seq int, v interface{}) {
   // Your code here.
+  DB := makeDebugger("Start", px.me)
+  DB.printf(1, fmt.Sprintf("seq: %v, v: %v", seq, v))
+  ok, _ := px.Status(seq)
+  if (ok) { // the seq has been agreed
+    DB.printf(2, fmt.Sprintf("seq: %v, v: %v", seq, v))
+    return
+  }
+
+  go px.startPaxo(seq, v)
 }
 
 //
@@ -99,6 +117,8 @@ func (px *Paxos) Start(seq int, v interface{}) {
 //
 func (px *Paxos) Done(seq int) {
   // Your code here.
+	px.mu.Lock(); defer px.mu.Unlock();
+  px.updatePaxosPeerDone(px.me, seq)
 }
 
 //
@@ -108,7 +128,14 @@ func (px *Paxos) Done(seq int) {
 //
 func (px *Paxos) Max() int {
   // Your code here.
-  return 0
+  px.mu.Lock(); px.mu.Unlock()
+  DB := makeDebugger("Max", px.me)
+  px.maxDone = -1
+  for seq, _ := range px.seqToState {
+    px.maxDone = Max(px.maxDone, seq)
+  }
+  DB.printf(1, fmt.Sprintf("max: %v", px.maxDone))
+  return px.maxDone
 }
 
 //
@@ -138,10 +165,10 @@ func (px *Paxos) Max() int {
 // life, it will need to catch up on instances that it
 // missed -- the other peers therefor cannot forget these
 // instances.
-// 
+//
 func (px *Paxos) Min() int {
   // You code here.
-  return 0
+  return px.minDone + 1
 }
 
 //
@@ -153,7 +180,26 @@ func (px *Paxos) Min() int {
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
   // Your code here.
-  return false, nil
+  DB := makeDebugger("Status", px.me)
+  DB.printf(1, fmt.Sprintf("seq: %v", seq))
+  px.mu.Lock(); defer px.mu.Unlock()
+  if !px.isSeqInit(seq) {
+    DB.printf(2, fmt.Sprintf("seq: %v", seq))
+    return false, nil
+  }
+
+	px.seqToState[seq].mu.Lock(); defer px.seqToState[seq].mu.Unlock();
+  if (seq < px.Min()) {
+    return false, nil
+  } else {
+    if (px.isDecided(seq)) {
+      DB.printf(2, fmt.Sprintf("seq: %v", seq))
+      return true, px.seqToState[seq].va
+    } else {
+      DB.printf(3, fmt.Sprintf("seq: %v", seq))
+      return false, nil
+    }
+  }
 }
 
 
@@ -181,6 +227,19 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 
 
   // Your initialization code here.
+  gob.Register(PrepareArgs{})
+  gob.Register(PrepareReply{})
+  gob.Register(AcceptArgs{})
+  gob.Register(AcceptReply{})
+  gob.Register(DecideArgs{})
+  gob.Register(DecideReply{})
+  px.seqToState = make(map[int]*PaxosState)
+  px.peerDone = make([]int, len(peers))
+  for i, _ := range px.peerDone {
+    px.peerDone[i] = -1;
+  }
+  px.minDone = -1
+  px.maxDone = -1
 
   if rpcs != nil {
     // caller will create socket &c
@@ -197,10 +256,10 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
       log.Fatal("listen error: ", e);
     }
     px.l = l
-    
+
     // please do not change any of the following code,
     // or do anything to subvert it.
-    
+
     // create a thread to accept RPC connections
     go func() {
       for px.dead == false {
