@@ -6,6 +6,7 @@ type PaxosState struct {
 	np int
 	na int
 	va interface {}
+	decided bool
 	mu sync.Mutex
 }
 
@@ -19,6 +20,9 @@ type PaxosArgs struct {
 type PaxosReply struct {
 	HandlerReply interface {}
 	Done int
+	Decided bool
+	Forgotten bool
+	Va interface {}
 }
 
 type PrepareArgs struct {

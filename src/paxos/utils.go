@@ -80,7 +80,33 @@ func (px *Paxos) isMajority(n int) bool {
 
 func (px *Paxos) isDecided(seq int) bool {
 	if px.isSeqInit(seq) {
-		return px.seqToState[seq].va != nil
+		if px.seqToState[seq].va != nil {
+			return px.seqToState[seq].decided
+		} else {
+			return false
+		}
+	}
+	return false
+}
+
+
+func (px *Paxos) isForgotten(seq int) bool {
+	return seq < px.Min()
+}
+
+func (px *Paxos) isForgottenSafe(seq int) bool {
+	px.mu.RLock(); defer px.mu.RUnlock()
+	return seq < px.Min()
+}
+
+func (px *Paxos) isDecidedSafe(seq int) bool {
+	px.mu.RLock(); defer px.mu.RUnlock()
+	if px.isSeqInit(seq) {
+		if px.seqToState[seq].va != nil {
+			return px.seqToState[seq].decided
+		} else {
+			return false
+		}
 	}
 	return false
 }
@@ -95,6 +121,10 @@ func (px *Paxos) isSelf(peerIdx int) bool {
 }
 
 // changing PAXOS state
+func (px *Paxos) updateStateDecided(seq int, decided bool) {
+	px.seqToState[seq].decided = decided
+}
+
 func (px *Paxos) updateStateVa(seq int, v interface {}) {
 	px.seqToState[seq].va = v
 }
@@ -118,7 +148,7 @@ func (px *Paxos) updatePaxosMaxDone(newMaxDone int) {
 }
 
 func (px *Paxos) updatePaxosPeerDone(peerIdx int, done int) {
-	DB := makeDebugger("updatePaxosPeerDone", px.me)
+	DB := makeDebugger("updatePaxosPeerDone", px.me, -1)
 	DB.printf(1, fmt.Sprintf("minDone %v from peer %v, done value %v", px.minDone, peerIdx, done))
 
 	if (done != px.peerDone[peerIdx]) {
@@ -146,10 +176,10 @@ func (px *Paxos) updatePaxosPeerDone(peerIdx int, done int) {
 }
 
 func (px *Paxos) initPaxosState(seq int) {
-	DB := makeDebugger("initPaxosState", px.me)
-	if !px.isSeqInit(seq) {
+	DB := makeDebugger("initPaxosState", px.me, seq)
+	if !px.isSeqInit(seq) && !px.isForgotten(seq) {
 		DB.printf(1, fmt.Sprintf("new paxo instance seq %v", seq))
-		px.seqToState[seq] = &PaxosState{np: -1, na: -1, va: nil}
+		px.seqToState[seq] = &PaxosState{np: -1, na: -1, va: nil, decided: false}
 	}
 }
 
@@ -165,3 +195,14 @@ func (px *Paxos) waitRand() {
 	// log.Printf("[waitRand]: end waiting")
 }
 
+
+func (px *Paxos) fillPaxosReply(args *PaxosArgs, reply *PaxosReply) {
+	switch args.HandlerArgs.(type) {
+	case PrepareArgs:
+		reply.HandlerReply = PrepareReply{}
+	case AcceptArgs:
+		reply.HandlerReply = AcceptReply{}
+	case DecideArgs:
+		reply.HandlerReply = DecideReply{}
+	}
+}

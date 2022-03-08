@@ -5,7 +5,7 @@ import (
 
 // issue outgoing rpc
 func (px *Paxos) startPaxo(seq int, v interface{}) {
-	DB := makeDebugger("startPaxo", px.me)
+	DB := makeDebugger("startPaxo", px.me, seq)
 	DB.printf(1, fmt.Sprintf("seq: %v, v: %v", seq, v))
 
 	nextN := 0
@@ -14,16 +14,16 @@ func (px *Paxos) startPaxo(seq int, v interface{}) {
 	// server 1 already holds lock and proposes to server 1, waiting for its lock
 	DB.printf(2, fmt.Sprintf("seq: %v, v: %v", seq, v))
 
-	for (!px.isDecided(seq)) {
+	for (!px.isDecidedSafe(seq) && !px.isForgottenSafe(seq)) {
 		N := nextN
 		nextN = N + 1
 
 		// propose
-		DB.printf(2, "propose")
-		DB.printf(3, fmt.Sprintf("N: %v nextN: %v", N, nextN))
+		DB.printf(3, fmt.Sprintf("seq: %v N: %v nextN: %v", seq, N, nextN))
 		ok, vPrime, highestNpFromPropose := px.propose(seq, N)
 		nextN = Max(nextN, highestNpFromPropose + 1)
 		if (!ok) {
+			DB.printf(4, fmt.Sprintf("start fail seq: %v N: %v nextN: %v", seq, N, nextN))
 			continue
 		}
 
@@ -35,6 +35,7 @@ func (px *Paxos) startPaxo(seq int, v interface{}) {
 		nextN = Max(nextN, highestNpFromAccept + 1)
 
 		if (!ok) {
+			DB.printf(5, fmt.Sprintf("start fail seq: %v N: %v nextN: %v", seq, N, nextN))
 			continue
 		}
 		// decide
@@ -60,7 +61,7 @@ func (px *Paxos) decide(seq int, v interface {}) {
 
 func (px *Paxos) accept(seq int, N int, v interface {}) (bool, int) {
 	agreeCnt := 0
-	DB := makeDebugger("accept", px.me)
+	DB := makeDebugger("accept", px.me, seq)
 	highestNp := -1
 
 	for i, peer := range px.peers {
@@ -75,6 +76,7 @@ func (px *Paxos) accept(seq int, N int, v interface {}) (bool, int) {
 			ok := call(peer, "Paxos.PaxosProtocol", &args, &reply)
 			DB.printf(4, fmt.Sprintf("seq: %v, Np: %v, v: %v, to peer %v", seq, N, v, i))
 			if (!ok) {
+				DB.printf(11, fmt.Sprintf("connection fail seq: %v, Np: %v, v: %v, to peer %v", seq, N, v, i))
 				continue
 			}
 		}
@@ -97,7 +99,7 @@ func (px *Paxos) propose(seq int, N int) (bool, interface {}, int) {
 	highestNa := -1
 	highestNp := -1
 	var highestVa interface {}
-	DB := makeDebugger("propose", px.me)
+	DB := makeDebugger("propose", px.me, seq)
 
 	for i, peer := range px.peers {
 
@@ -111,16 +113,18 @@ func (px *Paxos) propose(seq int, N int) (bool, interface {}, int) {
 			DB.printf(4, fmt.Sprintf("to peer %v", i))
 			ok := call(peer, "Paxos.PaxosProtocol", &args, &reply)
 			if (!ok) {
-				DB.printf(5, fmt.Sprintf("to peer %v", i))
+				DB.printf(5, fmt.Sprintf("connection fail to peer %v", i))
 				continue
+				// TODO: createa new function that checks if PAXOS is over based on
+				// 	PAXOS args and based on seqToState
 			}
 		}
 		handlerReply := reply.HandlerReply.(PrepareReply)
-		DB.printf(6, fmt.Sprintf("Seq: %v, Np: %v, Na: %v, Va: %v", seq, handlerReply.Np, handlerReply.Na, handlerReply.Va))
+		DB.printf(6, fmt.Sprintf("seq: %v, Np: %v, Na: %v, Va: %v", seq, handlerReply.Np, handlerReply.Na, handlerReply.Va))
 
 		if (handlerReply.Ok) {
 			agreeCnt++
-			DB.printf(7, fmt.Sprintf("6 peer %v, handlerNa: %v, hgihestNa: %v", i, handlerReply.Na, highestNa))
+			DB.printf(7, fmt.Sprintf("seq: %v 6 peer %v, handlerNa: %v, hgihestNa: %v", seq, i, handlerReply.Na, highestNa))
 			if (handlerReply.Na > highestNa) {
 			DB.printf(8, fmt.Sprintf("to peer %v", i))
 				highestNa = handlerReply.Na
@@ -137,23 +141,3 @@ func (px *Paxos) propose(seq int, N int) (bool, interface {}, int) {
 }
 
 
-
-// handle incoming rpc
-func (px *Paxos) prepareHandler(args *PrepareArgs, reply *PrepareReply) {
-	DB := makeDebugger("prepareHandler", px.me)
-	DB.printf(1, fmt.Sprintf("Seq: %v, N: %v", args.Seq, args.N))
-	state := px.seqToState[args.Seq]
-	reply.Np = state.np
-	if (args.N > state.np) {
-		DB.printf(2, fmt.Sprintf("Seq: %v, N: %v", args.Seq, args.N))
-		px.updateStateNp(args.Seq, args.N)
-		reply.Va = state.va
-		reply.Na = state.na
-		reply.Ok = true
-		DB.printf(3, fmt.Sprintf("Seq: %v, N: %v", args.Seq, args.N))
-	} else {
-		DB.printf(4, fmt.Sprintf("Seq: %v, N: %v", args.Seq, args.N))
-		reply.Ok = false
-	}
-	DB.printf(5, fmt.Sprintf("Seq: %v, Na: %v, Np: %v, Va: %v", args.Seq, reply.Na, reply.Np, reply.Va))
-}

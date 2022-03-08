@@ -593,6 +593,17 @@ func TestOld(t *testing.T) {
 //
 // many agreements, with unreliable RPC
 //
+/*
+
+TODO/QUESTION:
+Let's say that majority of the nodes send <PREPARE-OK>
+But not the majority of the nodes send <ACCEPT-OK>
+
+Another proposer comes along and propose.
+The Va are all happen to be nil. In this case, that
+node should not propose a new value
+
+*/
 func TestManyUnreliable(t *testing.T) {
   runtime.GOMAXPROCS(4)
 

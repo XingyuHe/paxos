@@ -36,7 +36,7 @@ type Num struct {
 }
 
 type Paxos struct {
-  mu sync.Mutex
+  mu sync.RWMutex
   l net.Listener
   dead bool
   unreliable bool
@@ -98,7 +98,7 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 //
 func (px *Paxos) Start(seq int, v interface{}) {
   // Your code here.
-  DB := makeDebugger("Start", px.me)
+  DB := makeDebugger("Start", px.me, seq)
   DB.printf(1, fmt.Sprintf("seq: %v, v: %v", seq, v))
   ok, _ := px.Status(seq)
   if (ok) { // the seq has been agreed
@@ -128,8 +128,8 @@ func (px *Paxos) Done(seq int) {
 //
 func (px *Paxos) Max() int {
   // Your code here.
-  px.mu.Lock(); px.mu.Unlock()
-  DB := makeDebugger("Max", px.me)
+  px.mu.RLock(); defer px.mu.RUnlock()
+  DB := makeDebugger("Max", px.me, -1)
   px.maxDone = -1
   for seq, _ := range px.seqToState {
     px.maxDone = Max(px.maxDone, seq)
@@ -180,16 +180,16 @@ func (px *Paxos) Min() int {
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
   // Your code here.
-  DB := makeDebugger("Status", px.me)
+  DB := makeDebugger("Status", px.me, seq)
   DB.printf(1, fmt.Sprintf("seq: %v", seq))
-  px.mu.Lock(); defer px.mu.Unlock()
+  px.mu.RLock(); defer px.mu.RUnlock()
   if !px.isSeqInit(seq) {
     DB.printf(2, fmt.Sprintf("seq: %v", seq))
     return false, nil
   }
 
 	px.seqToState[seq].mu.Lock(); defer px.seqToState[seq].mu.Unlock();
-  if (seq < px.Min()) {
+  if (px.isForgotten(seq)) {
     return false, nil
   } else {
     if (px.isDecided(seq)) {
@@ -267,9 +267,11 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
         if err == nil && px.dead == false {
           if px.unreliable && (rand.Int63() % 1000) < 100 {
             // discard the request.
+            fmt.Printf("[Make] discard request peer: %v, seq: %v\n", px.me, -1)
             conn.Close()
           } else if px.unreliable && (rand.Int63() % 1000) < 200 {
             // process the request but force discard of reply.
+            fmt.Printf("[Make] process the request but force discard of reply: peer: %v, seq: %v\n", px.me, -1)
             c1 := conn.(*net.UnixConn)
             f, _ := c1.File()
             err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
