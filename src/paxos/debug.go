@@ -1,4 +1,5 @@
 package paxos
+// import "log"
 
 
 type Debugger struct {

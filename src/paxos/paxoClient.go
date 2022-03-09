@@ -14,7 +14,7 @@ func (px *Paxos) startPaxo(seq int, v interface{}) {
 	// server 1 already holds lock and proposes to server 1, waiting for its lock
 	DB.printf(2, fmt.Sprintf("seq: %v, v: %v", seq, v))
 
-	for (!px.isDecidedSafe(seq) && !px.isForgottenSafe(seq)) {
+	for (!px.isDecidedSafe(seq) && !px.isForgottenSafe(seq) && !px.dead) {
 		N := nextN
 		nextN = N + 1
 

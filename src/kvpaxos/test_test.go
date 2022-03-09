@@ -141,7 +141,11 @@ func TestDone(t *testing.T) {
 
   runtime.GC()
   var m0 runtime.MemStats
+  var m3 runtime.MemStats
   runtime.ReadMemStats(&m0)
+  runtime.ReadMemStats(&m3)
+  prevMem := m3.Alloc
+
   // rtm's m0.Alloc is 2 MB
 
   sz := 1000000
@@ -156,6 +160,11 @@ func TestDone(t *testing.T) {
       }
       ck.Put(key, string(value))
       check(t, cka[i % nservers], key, string(value))
+
+      runtime.ReadMemStats(&m3)
+      fmt.Printf("-- Putting used mem %v\n", m3.Alloc - prevMem)
+      prevMem = m3.Alloc
+
     }
   }
 
@@ -166,6 +175,10 @@ func TestDone(t *testing.T) {
     for pi := 0; pi < nservers; pi++ {
       cka[pi].Put("a", "aa")
       check(t, cka[pi], "a", "aa")
+
+      runtime.ReadMemStats(&m3)
+      fmt.Printf("-- Putting used mem %v\n", m3.Alloc - prevMem)
+      prevMem = m3.Alloc
     }
   }
 
@@ -529,7 +542,7 @@ func TestHole(t *testing.T) {
     check(t, ck2, "q", "q")
     ck2.Put("q", "qq")
     check(t, ck2, "q", "qq")
-      
+
     // restore network, wait for all threads to exit.
     part(t, tag, nservers, []int{0,1,2,3,4}, []int{}, []int{})
     done = true

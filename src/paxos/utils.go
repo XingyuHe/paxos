@@ -141,22 +141,16 @@ func (px *Paxos) updatePaxosMinDone(newMinDone int) {
 	px.minDone = newMinDone
 }
 
-func (px *Paxos) updatePaxosMaxDone(newMaxDone int) {
-	if (newMaxDone > px.maxDone) {
-		px.maxDone = newMaxDone
-	}
-}
-
 func (px *Paxos) updatePaxosPeerDone(peerIdx int, done int) {
 	DB := makeDebugger("updatePaxosPeerDone", px.me, -1)
 	DB.printf(1, fmt.Sprintf("minDone %v from peer %v, done value %v", px.minDone, peerIdx, done))
 
-	if (done != px.peerDone[peerIdx]) {
+	if (done > px.peerDone[peerIdx]) {
 		DB.printf(2, fmt.Sprintf("from peer %v, done value %v", peerIdx, done))
 
 		// decide whether do update Min()
 		if (px.peerDone[peerIdx] == px.minDone) {
-			px.peerDone[peerIdx] = done
+			px.peerDone[peerIdx] = Max(done, px.minDone)
 			tempMinDone := MinIntSlice(px.peerDone)
 			DB.printf(3, fmt.Sprintf("from peer %v, done value %v, tempMinDone %v", peerIdx, done, tempMinDone))
 

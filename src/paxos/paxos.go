@@ -88,6 +88,10 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
   return false
 }
 
+func (px *Paxos) GetSeqToState() map[int]*PaxosState {
+	px.mu.Lock(); defer px.mu.Unlock();
+  return px.seqToState
+}
 
 //
 // the application wants paxos to start agreement on

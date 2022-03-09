@@ -5,6 +5,7 @@ import "hash/fnv"
 const (
   OK = "OK"
   ErrNoKey = "ErrNoKey"
+  ErrNotAgreed = "ErrNotAgreed"
 )
 type Err string
 
@@ -16,6 +17,7 @@ type PutArgs struct {
   // You'll have to add definitions here.
   // Field names must start with capital letters,
   // otherwise RPC will break.
+  ID int64
 }
 
 type PutReply struct {
@@ -26,6 +28,7 @@ type PutReply struct {
 type GetArgs struct {
   Key string
   // You'll have to add definitions here.
+  ID int64
 }
 
 type GetReply struct {

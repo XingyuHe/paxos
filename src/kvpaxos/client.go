@@ -1,7 +1,11 @@
 package kvpaxos
 
-import "net/rpc"
-import "fmt"
+import (
+  "net/rpc"
+  "fmt"
+	"crypto/rand"
+	"math/big"
+)
 
 type Clerk struct {
   servers []string
@@ -39,7 +43,7 @@ func call(srv string, rpcname string,
     return false
   }
   defer c.Close()
-    
+
   err := c.Call(rpcname, args, reply)
   if err == nil {
     return true
@@ -49,6 +53,13 @@ func call(srv string, rpcname string,
   return false
 }
 
+func genID() int64 {
+	max := big.NewInt(int64(1) << 62)
+  bigx, _ := rand.Int(rand.Reader, max)
+  x := bigx.Int64()
+  return x
+}
+
 //
 // fetch the current value for a key.
 // returns "" if the key does not exist.
@@ -56,7 +67,35 @@ func call(srv string, rpcname string,
 //
 func (ck *Clerk) Get(key string) string {
   // You will have to modify this function.
-  return ""
+
+  id := genID()
+  DB := makeDebugger("Get", id, -1)
+  DB.printf(1, "START")
+
+  for {
+    for _, server := range(ck.servers) {
+      args := buildGetArgs(key, id)
+      reply := GetReply{}
+
+      DB.printf(2, "calling server", server)
+      ok := call(server, "KVPaxos.Get", &args, &reply)
+      if !ok {
+        // call failed
+        DB.printf(3, "CALLFAILED")
+      } else {
+        // call succeeded
+        switch reply.Err {
+        case ErrNoKey:
+          DB.printf(4, "Returning ReplyError:", reply.Err)
+          return reply.Value
+        case OK:
+          DB.printf(4, "Returning ReplyError:", reply.Err)
+          return reply.Value
+        default:
+        }
+      }
+    }
+  }
 }
 
 //
@@ -65,7 +104,30 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
   // You will have to modify this function.
-  return ""
+  id := genID()
+
+  DB := makeDebugger("PutExt", id, -1)
+  DB.printf(1, "START")
+
+  for {
+    for _, server := range(ck.servers) {
+      args := buildPutArgs(key, id, value, dohash)
+      reply := PutReply{}
+      DB.printf(2, "args: ", args.toString(), "calling server ", server)
+      ok := call(server, "KVPaxos.Put", &args, &reply)
+
+      if !ok {
+        DB.printf(3, "CALLFAILED")
+      } else {
+        switch reply.Err {
+        case OK:
+          DB.printf(4, "Returning ReplyError:", reply.Err)
+          return reply.PreviousValue
+        default:
+        }
+      }
+    }
+  }
 }
 
 func (ck *Clerk) Put(key string, value string) {
