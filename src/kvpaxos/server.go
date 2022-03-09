@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+  "time"
 	"net"
 	"net/rpc"
 	"os"
@@ -27,9 +28,50 @@ type Op struct {
   // Your definitions here.
   // Field names must start with capital letters,
   // otherwise RPC will break.
-  Args interface {} // Get or Put args
-  Reply interface {} // Get or Put Reply
+  Agree interface {} // get agree or put agree
 }
+
+/*
+
+The goal is to get rid of kvstore
+
+getCache maps GetID to the corresponding put ID
+getPutCache maps PutID to reply
+maps GetID to the PutID
+
+keyToCurrPutID:
+  key: PutID
+
+keyToPastPutIDToValue:
+
+  alternatively, it can be a map of map
+  key: [(PutID1 : value1), (PutID2 : value2), ...]
+
+getIDtoPutID:
+  map getID to the putID right before the getID
+  putID can then go to state log to get the right value
+
+Get()
+  if GetID in getIDtoPutID:
+    goto keyToPastPutIDToValue
+  else:
+    goto keyToPutID
+    if no key:
+      generate a fake PutID
+      update getIDToPutID
+    goto keyToPastPutIDToValue
+    update getIDtoPutID
+    return value
+
+Put()
+if PutID in keyToPastPutIDValue:
+  return the previous PutIDValue
+else
+  goto keyToCurrPutID return its value as previous value
+  update keyToCurrPutID with a new PutID
+  update keyToPastPutIDToValue
+
+*/
 
 type KVPaxos struct {
   mu sync.Mutex
@@ -40,9 +82,9 @@ type KVPaxos struct {
   px *paxos.Paxos
 
   // Your definitions here.
-  kvstore map[string]string
-  getCache map[int64]GetReply
-  putCache map[int64]PutReply
+  kpv KeyToPastPutIDToValue
+  getIDtoPutID map[int64]int64
+  keyToCurrPutID map[string]int64
   doneSeq int
 }
 
@@ -54,7 +96,7 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 
   kv.mu.Lock(); defer kv.mu.Unlock()
 
-  origReply, ok := kv.findGetCache(args.ID)
+  origReply, ok := kv.findGetCache(args.Key, args.ID)
   if ok {
     kv.fillGetReply(origReply, reply)
     DB.printf(2, "found in GetCache ", reply.toString())
@@ -65,11 +107,13 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
     kv.px.Start(seq, candidateOp)
     DB.printf(3, "finished Start")
     decidedOp := kv.waitForDecision(seq)
-    DB.printf(4, "decidedOp ", decidedOp.toString())
+    DB.printf(4, "candidateOp: ", candidateOp.toString())
+    DB.printf(4, "decidedOp: ", decidedOp.toString())
     kv.updateStateFromSeq(seq)
 
     if (decidedOp == candidateOp) {
-      *reply = decidedOp.Reply.(GetReply)
+      agree := decidedOp.Agree.(GetAgree)
+      *reply = kv.keyToGetReply(agree.Key, agree.LastPutID)
       DB.printf(5, "agreed\n\tdecidedOp: ", decidedOp.toString(), "\n\tcandidateOp: ", candidateOp.toString())
     } else {
       DB.printf(5, "not agreed\n\tdecidedOp: ", decidedOp.toString(), "\n\tcandidateOp: ", candidateOp.toString())
@@ -89,7 +133,7 @@ func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
 
   kv.mu.Lock(); defer kv.mu.Unlock()
 
-  origReply, ok := kv.findPutCache(args.ID)
+  origReply, ok := kv.findPutCache(args.Key, args.ID)
   if ok {
     kv.fillPutReply(origReply, reply)
     DB.printf(2, "found in PutCache", reply.toString())
@@ -97,6 +141,7 @@ func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
 
     seq := kv.doneSeq + 1
     candidateOp := kv.builPaxosPutOp(seq, args)
+    DB.printf(3, "candidateOp ", candidateOp.toString())
     kv.px.Start(seq, candidateOp)
     DB.printf(3, "finished Start")
     decidedOp := kv.waitForDecision(seq)
@@ -104,7 +149,8 @@ func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
     kv.updateStateFromSeq(seq)
 
     if (decidedOp == candidateOp) {
-      *reply = decidedOp.Reply.(PutReply)
+      agree := decidedOp.Agree.(PutAgree)
+      *reply = kv.keyToPutReply(agree.Key, agree.PutID)
       DB.printf(5, "agreed\n\tdecidedOp: ", decidedOp.toString(), "\n\tcandidateOp: ", candidateOp.toString())
     } else {
       DB.printf(5, "not agreed\n\tdecidedOp: ", decidedOp.toString(), "\n\tcandidateOp: ", candidateOp.toString())
@@ -116,6 +162,18 @@ func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
   kv.printStateSize()
   kv.printState()
   return nil
+}
+
+func (kv *KVPaxos) checkUpdateStateFromSeq() {
+  DB := makeDebugger("checkUpdateStateFromSeq", 0, kv.me)
+  for {
+    time.Sleep(10 * time.Millisecond)
+    kv.mu.Lock()
+    DB.printf(1, "")
+    kv.px.Done(kv.doneSeq)
+    kv.updateStateFromSeq(kv.doneSeq + 1)
+    kv.mu.Unlock()
+  }
 }
 
 // tell the server to shut itself down.
@@ -142,15 +200,19 @@ func StartServer(servers []string, me int) *KVPaxos {
   kv.me = me
 
   // Your initialization code here.
-  kv.kvstore = make(map[string]string)
-  kv.getCache = make(map[int64]GetReply)
-  kv.putCache = make(map[int64]PutReply)
+  kv.getIDtoPutID = make(map[int64]int64)
+  kv.keyToCurrPutID = make(map[string]int64)
+  kv.kpv = MakeKPV()
   kv.doneSeq = -1
 
   gob.Register(GetArgs{})
   gob.Register(GetReply{})
   gob.Register(PutArgs{})
   gob.Register(PutReply{})
+  gob.Register(GetAgree{})
+  gob.Register(PutAgree{})
+
+  go kv.checkUpdateStateFromSeq()
 
 
   rpcs := rpc.NewServer()
@@ -175,9 +237,11 @@ func StartServer(servers []string, me int) *KVPaxos {
       if err == nil && kv.dead == false {
         if kv.unreliable && (rand.Int63() % 1000) < 100 {
           // discard the request.
+          log.Printf("[StartServer]: server %v, discard request", kv.me)
           conn.Close()
         } else if kv.unreliable && (rand.Int63() % 1000) < 200 {
           // process the request but force discard of reply.
+          log.Printf("[StartServer]: server %v, process the request but force discard of reply", kv.me)
           c1 := conn.(*net.UnixConn)
           f, _ := c1.File()
           err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)

@@ -41,3 +41,24 @@ func hash(s string) uint32 {
   h.Write([]byte(s))
   return h.Sum32()
 }
+
+type OrderedDict struct {
+  stack []int64
+  mapping map[int64]string
+}
+
+type KeyToPastPutIDToValue struct {
+  mapping map[string]*OrderedDict
+}
+
+type PutAgree struct {
+  PutID int64
+  Key string
+  Val string
+}
+
+type GetAgree struct {
+  Key string
+  GetID int64
+  LastPutID int64
+}

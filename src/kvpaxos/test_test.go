@@ -395,12 +395,12 @@ func TestUnreliable(t *testing.T) {
         pv := myck.Get(key)
         ov := myck.PutHash(key, "0")
         if ov != pv {
-          t.Fatalf("wrong value; expected %s but got %s", pv, ov)
+          t.Fatalf("wrong value; key %s expected %s but got %s", key, pv, ov)
         }
         ov = myck.PutHash(key, "1")
         pv = NextValue(pv, "0")
         if ov != pv {
-          t.Fatalf("wrong value; expected %s but got %s", pv, ov)
+          t.Fatalf("wrong value; key %s expected %s but got %s", key, pv, ov)
         }
         ov = myck.PutHash(key, "2")
         pv = NextValue(pv, "1")

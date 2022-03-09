@@ -1,12 +1,15 @@
 package paxos
 
-import "testing"
-import "runtime"
-import "strconv"
-import "os"
-import "time"
-import "fmt"
-import "math/rand"
+import (
+	"fmt"
+	"log"
+	"math/rand"
+	"os"
+	"runtime"
+	"strconv"
+	"testing"
+	"time"
+)
 
 func port(tag string, host int) string {
   s := "/var/tmp/824-"
@@ -420,6 +423,7 @@ func TestForgetMem(t *testing.T) {
   runtime.ReadMemStats(&m2)
   // m2.Alloc about 10 megabytes
 
+  log.Printf("[Test]: limit: %v, current: %v", m1.Alloc / 2, m2.Alloc)
   if m2.Alloc > (m1.Alloc / 2) {
     t.Fatalf("memory use did not shrink enough")
   }

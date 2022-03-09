@@ -1,77 +1,79 @@
 package kvpaxos
 
 import (
-	"bytes"
-	"fmt"
 	"log"
 	"strconv"
 	"time"
-	"unsafe"
 )
 
 // changing the state
 
 func (kv *KVPaxos) updateStateFromSeq(seq int) bool {
 	DB := makeDebugger("updateStateFromSeq", 0, kv.me)
-	DB.printf(1, "")
+	DB.printf(1, "doneSeq: ", kv.doneSeq)
+	log.Printf("[updateStateFromSeq] seq: %v", seq)
+
+  defer kv.printSeqToState()
+  defer kv.printStateSize()
+  defer kv.printState()
+
 	ok, v := kv.px.Status(seq)
 	if !ok {
 		// Instance not agreed
-		DB.printf(1, "Instance not agreed")
+		DB.printf(2, "Instance not agreed")
 		return false
 	} else {
 		// Paxos instance seq is agreed
 		op := v.(Op)
 		if (seq != kv.doneSeq + 1) {
-			DB.printf(1, "seq skipped")
+			DB.printf(3, "seq skipped")
 			log.Fatalf("seq: %v is skipped!", kv.doneSeq + 1)
 		}
 
+		DB.printf(4, "seq skipped")
 		// update doneSeq
 		kv.doneSeq = seq
 		kv.px.Done(seq)
 
-		switch args := op.Args.(type) {
-		case GetArgs:
-			DB.ID = args.ID
-			DB.printf(2, "")
-			reply := op.Reply.(GetReply)
-			kv.updateGetCache(seq, &args, &reply)
+		switch agree := op.Agree.(type) {
+		case GetAgree:
+			DB.ID = agree.GetID
+			DB.printf(5, "")
+			kv.updateGetCache(&agree)
 
-		case PutArgs:
-			reply := op.Reply.(PutReply)
-			DB.printf(3, "")
-			kv.updatePutCache(seq, &args, &reply)
-			DB.printf(4, "")
-			kv.updateKVStore(&args)
+		case PutAgree:
+			DB.printf(6, "")
+			kv.updatePutCache(&agree)
+		default:
+			DB.printf(7, "")
 		}
 		return true
 	}
 }
 
-func (kv *KVPaxos) updateGetCache(seq int, args *GetArgs, reply *GetReply) {
+func (kv *KVPaxos) updateGetCache(agree *GetAgree) {
 
-	DB := makeDebugger("updateGetCache", args.ID, kv.me)
+	DB := makeDebugger("updateGetCache", agree.GetID, kv.me)
 	DB.printf(1, "")
 	// update cache
-	if _, ok := kv.findGetCache(args.ID); !ok {
-		DB.printf(2, "GetCache not found", args.ID, "new GetReply", reply.toString())
-		kv.updateGetCacheID(args.ID, *reply)
+	if _, ok := kv.findGetCache(agree.Key, agree.GetID); !ok {
+		DB.printf(2, "GetCache not found", agree.GetID, "new GetReply", kv.keyToGetReply(agree.Key, agree.LastPutID))
+		kv.updateGetCacheID(agree)
 	} else {
 		// only update the first 1 instance for the same get ID
 		DB.printf(3, "GetCache already found")
 	}
 }
 
-func (kv *KVPaxos) updatePutCache(seq int, args *PutArgs, reply *PutReply) {
+func (kv *KVPaxos) updatePutCache(agree *PutAgree) {
 
-	DB := makeDebugger("updatePutCache", args.ID, kv.me)
+	DB := makeDebugger("updatePutCache", agree.PutID, kv.me)
 	DB.printf(1, "")
 
 	// update cache
-	if _, ok := kv.findPutCache(args.ID); !ok {
-		DB.printf(2, "PutCache not found ", args.ID, " new PutReply ", reply.toString())
-		kv.updatePutCacheID(args.ID, *reply)
+	if _, ok := kv.findPutCache(agree.Key, agree.PutID); !ok {
+		DB.printf(2, "PutCache not found ", agree.PutID, " new PutReply ", kv.keyToPutReply(agree.Key, agree.PutID))
+		kv.updatePutCacheID(agree)
 	} else {
 		// only update the first 1 instance for the same put ID
 		DB.printf(3, "PutCache already found")
@@ -79,48 +81,37 @@ func (kv *KVPaxos) updatePutCache(seq int, args *PutArgs, reply *PutReply) {
 }
 
 
-func (kv *KVPaxos) updateKVStore(args *PutArgs) {
+func (kv *KVPaxos) updateGetCacheID(agree *GetAgree) {
+	kv.getIDtoPutID[agree.GetID] = agree.LastPutID
+}
 
-	DB := makeDebugger("updateKVStore", 0, kv.me)
-	DB.printf(1, "")
-	value := args.Value
-
-	if args.DoHash {
-		oldVal := ""
-		oldVal, _ = kv.kvstore[args.Key]
-
-		DB.printf(2, "DoHash")
-		value = strconv.Itoa(int(hash(oldVal + value)))
+func (kv *KVPaxos) findGetCache(key string, getID int64) (GetReply, bool) {
+	lastPutID, ok := kv.getPutIDBeforeGetID(getID)
+	if !ok {
+		return GetReply{}, ok
 	}
-
-	DB.printf(3, "previousValue: ", kv.kvstore[args.Key], " newValue ", value)
-	kv.kvstore[args.Key] = value
+	return kv.keyToGetReply(key, lastPutID), true
 }
 
-
-func (kv *KVPaxos) updateGetCacheID(id int64, reply GetReply) {
-	kv.getCache[id] = reply
+func (kv *KVPaxos) updatePutCacheID(agree *PutAgree) {
+	kv.kpv.insert(agree.Key, agree.PutID, agree.Val)
+	kv.keyToCurrPutID[agree.Key] = agree.PutID
 }
 
-func (kv *KVPaxos) findGetCache(id int64) (GetReply, bool) {
-	reply, ok := kv.getCache[id]
-	return reply, ok
+func (kv *KVPaxos) getPutIDBeforeGetID(getID int64) (int64, bool) {
+	lastPutID,ok := kv.getIDtoPutID[getID]
+	return lastPutID, ok
 }
 
-func (kv *KVPaxos) updatePutCacheID(id int64, reply PutReply) {
-	kv.putCache[id] = reply
+func (kv *KVPaxos) findPutCache(key string, putID int64) (PutReply, bool) {
+	value := kv.kpv.getValue(key, putID)
+	if value == "" {
+		return PutReply{}, false
+	}
+	prevValue := kv.kpv.getPreValue(key, putID)
+	return kv.buildPutReply(OK, prevValue), true
 }
 
-func (kv *KVPaxos) findPutCache(id int64) (PutReply, bool) {
-	reply, ok := kv.putCache[id]
-	return reply, ok
-}
-
-
-func (kv *KVPaxos) findKVstore(key string) (string, bool) {
-	value, ok := kv.kvstore[key]
-	return value, ok
-}
 
 
 func (kv *KVPaxos) fillGetReply(src GetReply, tgt *GetReply) {
@@ -137,32 +128,49 @@ func (kv *KVPaxos) fillPutReply(src PutReply, tgt *PutReply) {
 //
 func (kv *KVPaxos) builPaxosPutOp(seq int, args *PutArgs) Op {
 	v := Op{}
-	v.Args = *args
 
-	// construct reply
-	reply := PutReply{}
-	reply.Err = OK
-	reply.PreviousValue = kv.kvstore[args.Key]
-	v.Reply = reply
+	agree := PutAgree{}
+	agree.Key = args.Key
+	if args.DoHash {
+		_, preVal := kv.kpv.getLastPutIDVal(args.Key)
+		h := hash(preVal + args.Value)
+		agree.Val = strconv.Itoa(int(h))
+	} else {
+		agree.Val =args.Value
+	}
+	agree.PutID = args.ID
 
+	v.Agree = agree
 	return v
 }
 func (kv *KVPaxos) builPaxosGetOp(seq int, args *GetArgs) Op {
 	v := Op{}
-	v.Args = args
 
-	// construct reply
-	reply := GetReply{}
-	value, ok := kv.findKVstore(args.Key)
-	if ok {
-		reply.Value = value
-		reply.Err = OK
-	} else {
-		reply.Err = ErrNoKey
-	}
-	v.Reply = reply
+	agree := GetAgree{}
+	agree.GetID = args.ID
+	agree.Key = args.Key
+	agree.LastPutID, _ = kv.kpv.getLastPutIDVal(args.Key)
 
+	v.Agree = agree
 	return v
+}
+
+func (kv *KVPaxos) keyToGetReply(key string, lastPutID int64) GetReply {
+	value := kv.kpv.getValue(key, lastPutID)
+	if value == "" {
+		return kv.buildGetReply(ErrNoKey, value)
+	}
+	return kv.buildGetReply(OK, value)
+}
+
+func (kv *KVPaxos) keyToPutReply(key string, putID int64) PutReply {
+	var preValue string
+	if kv.kpv.containsPutID(key, putID) {
+		preValue = kv.kpv.getPreValue(key, putID)
+	} else {
+		preValue = kv.kpv.getValue(key, kv.keyToCurrPutID[key])
+	}
+		return kv.buildPutReply(OK, preValue)
 }
 
 
@@ -197,131 +205,109 @@ func (kv *KVPaxos) waitForDecision(seq int) Op {
 	}
 }
 
-func (op *Op) toString() string {
-	var ans bytes.Buffer
 
-	switch args := op.Args.(type) {
-	case GetArgs:
-		reply := op.Reply.(GetReply)
 
-		ans.WriteString("GetArgs: ")
-		ans.WriteString(args.toString())
-		ans.WriteString(" ")
-		ans.WriteString("GetReply: ")
-		ans.WriteString(reply.toString())
 
-	case PutArgs:
-		reply := op.Reply.(PutReply)
+// orderedDict
+func (od *OrderedDict) get(putID int64) string {
+  return od.mapping[putID]
+}
 
-		ans.WriteString("PutArgs: ")
-		ans.WriteString(args.toString())
-		ans.WriteString(" ")
-		ans.WriteString("PutReply: ")
-		ans.WriteString(reply.toString())
+func (od *OrderedDict) contains(putID int64) bool {
+  _, ok := od.mapping[putID]
+	return ok
+}
 
+func (od *OrderedDict) insert(putID int64, value string) {
+  od.stack = append(od.stack, putID)
+  od.mapping[putID] = value
+}
+
+func (od *OrderedDict) getPreValue(putID int64) string {
+  for i := 1; i < len(od.stack); i++ {
+    if putID == od.stack[i] {
+      return od.get(od.stack[i - 1])
+    }
+  }
+  return ""
+}
+
+func (od *OrderedDict) empty() bool {
+	return len(od.stack) == 0
+}
+
+func (od *OrderedDict) size() int {
+	return len(od.stack)
+}
+
+func (od *OrderedDict) getLastPutIDVal() (int64, string) {
+	if od.empty() {
+		return 0, ""
+	} else {
+		return od.stack[len(od.stack) - 1], od.get(od.stack[len(od.stack) - 1])
 	}
-	return ans.String()
 }
 
-func (args *GetArgs) toString() string {
-	var ans bytes.Buffer
-	ans.WriteString("ID: ")
-	ans.WriteString(fmt.Sprint(args.ID))
-	ans.WriteString(", ")
-	ans.WriteString("Key: ")
-	ans.WriteString(fmt.Sprint(args.Key))
-	return ans.String()
+func NewOrderedDict() *OrderedDict {
+  ret := &OrderedDict{}
+  ret.stack = make([]int64, 0)
+  ret.mapping = make(map[int64]string)
+  return ret
 }
 
-func (reply *GetReply) toString() string {
-	var ans bytes.Buffer
-	ans.WriteString("Value: ")
-	ans.WriteString(fmt.Sprint(reply.Value))
-	ans.WriteString(", ")
-	ans.WriteString("Err: ")
-	ans.WriteString(fmt.Sprint(reply.Err))
-	return ans.String()
-}
-
-
-func (args *PutArgs) toString() string {
-	var ans bytes.Buffer
-	ans.WriteString("ID: ")
-	ans.WriteString(fmt.Sprint(args.ID))
-	ans.WriteString(", ")
-	ans.WriteString("Key: ")
-	ans.WriteString(fmt.Sprint(args.Key))
-	ans.WriteString(" ")
-	ans.WriteString("Value: ")
-	ans.WriteString(fmt.Sprint(args.Value))
-	ans.WriteString(" ")
-	ans.WriteString("DoHash: ")
-	ans.WriteString(fmt.Sprint(args.DoHash))
-	return ans.String()
-}
-
-func (reply *PutReply) toString() string {
-	var ans bytes.Buffer
-	ans.WriteString("PreviousValue: ")
-	ans.WriteString(fmt.Sprint(reply.PreviousValue))
-	ans.WriteString(", ")
-	ans.WriteString("Err: ")
-	ans.WriteString(fmt.Sprint(reply.Err))
-	return ans.String()
-}
-
-func (kv *KVPaxos) printSeqToState() {
-	// DB := makeDebugger("SeqToState", 0, kv.me)
-
-	seqToState := kv.px.GetSeqToState()
-	for key, _ := range seqToState {
-		log.Printf("\tkey: %v", key)
+// KeyToPastPutIDToValue
+func (kpv *KeyToPastPutIDToValue) insert(key string, putID int64, value string) {
+	if !kpv.contains(key) {
+		kpv.mapping[key] = NewOrderedDict()
 	}
-	log.Printf("\tsize of seqToState %v", len(seqToState))
+	kpv.getPutIDToVal(key).insert(putID, value)
 }
 
 
-func (kv *KVPaxos) printStateSize() {
-	log.Printf("size at server %v", kv.me)
-	log.Printf("\tkvStore: %v", unsafe.Sizeof(kv.kvstore))
-	log.Printf("\tputCache: %v", unsafe.Sizeof(kv.putCache))
-	log.Printf("\tgetCache: %v", unsafe.Sizeof(kv.getCache))
+func (kpv *KeyToPastPutIDToValue) contains(key string) bool {
+	_, ok := kpv.mapping[key]
+	return ok
 }
 
-func (kv *KVPaxos) printState() {
-	var size uintptr
-	size += kv.printGetCache()
-	size += kv.printPutCache()
-	size += kv.printKVStore()
-	log.Printf("[printState] totalSize: %v", size)
-}
-
-func (kv *KVPaxos) printGetCache() uintptr {
-	log.Printf("[GetCache]")
-	var size uintptr
-	for id, reply := range kv.getCache {
-		log.Printf("\t id: %v, reply %v", id, "")
-		size += unsafe.Sizeof(reply)
+func (kpv *KeyToPastPutIDToValue) containsPutID(key string, putID int64) bool {
+	if kpv.contains(key) {
+		return kpv.getPutIDToVal(key).contains(putID)
+	} else {
+		return false
 	}
-	return size
 }
 
-func (kv *KVPaxos) printPutCache() uintptr {
-	log.Printf("[PutCache]")
-	var size uintptr
-	for id, reply := range kv.getCache {
-		log.Printf("\t id: %v, reply %v", id, "")
-		size += unsafe.Sizeof(reply)
-	}
-	return size
+func (kpv *KeyToPastPutIDToValue) getPutIDToVal(key string) *OrderedDict {
+	return kpv.mapping[key]
 }
 
-func (kv *KVPaxos) printKVStore() uintptr {
-	log.Printf("[KVStore]")
-	var size uintptr
-	for key, reply := range kv.kvstore {
-		log.Printf("\t key: %v, val %v", key, "")
-		size += unsafe.Sizeof(reply)
+func (kpv *KeyToPastPutIDToValue) getValue(key string, putID int64) string {
+	if !kpv.contains(key) {
+		return ""
+	} else {
+		return kpv.getPutIDToVal(key).get(putID)
 	}
-	return size
+}
+
+func (kpv *KeyToPastPutIDToValue) getLastPutIDVal(key string) (int64, string) {
+	if !kpv.contains(key) {
+		return 0, ""
+	} else {
+		lastPutID, lastVal := kpv.getPutIDToVal(key).getLastPutIDVal()
+		return lastPutID, lastVal
+	}
+}
+
+func (kpv *KeyToPastPutIDToValue) getPreValue(key string, putID int64) string {
+	if !kpv.contains(key) {
+		return ""
+	} else {
+		return kpv.getPutIDToVal(key).getPreValue(putID)
+	}
+}
+
+func MakeKPV() KeyToPastPutIDToValue {
+	ret := KeyToPastPutIDToValue{}
+	ret.mapping = make(map[string]*OrderedDict)
+	return ret
 }

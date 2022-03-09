@@ -69,7 +69,7 @@ func (ck *Clerk) Get(key string) string {
   // You will have to modify this function.
 
   id := genID()
-  DB := makeDebugger("Get", id, -1)
+  DB := makeDebugger("GetExt", id, -1)
   DB.printf(1, "START")
 
   for {
@@ -86,10 +86,11 @@ func (ck *Clerk) Get(key string) string {
         // call succeeded
         switch reply.Err {
         case ErrNoKey:
-          DB.printf(4, "Returning ReplyError:", reply.Err)
+          DB.printf(4, "Returning ReplyError: ", reply.Err)
           return reply.Value
         case OK:
           DB.printf(4, "Returning ReplyError:", reply.Err)
+          DB.printf(5, "Value: ", reply.Value)
           return reply.Value
         default:
         }
@@ -122,6 +123,7 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
         switch reply.Err {
         case OK:
           DB.printf(4, "Returning ReplyError:", reply.Err)
+          DB.printf(5, "PreviousValue: ", reply.PreviousValue)
           return reply.PreviousValue
         default:
         }
