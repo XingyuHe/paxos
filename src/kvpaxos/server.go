@@ -47,6 +47,19 @@ keyToPastPutIDToValue:
   alternatively, it can be a map of map
   key: [(PutID1 : value1), (PutID2 : value2), ...]
 
+  in the case of TestDone:
+  key1: [(PutID1 : value1), (PutID2 : value2)]
+  key2: [(PutID1 : value1), (PutID2 : value2)]
+  ....
+  key9: [(PutID1 : value1), (PutID2 : value2)]
+  key10: [(PutID1 : value1), (PutID2 : value2)]
+
+  in total you have to store 10 x 2 x 1 MB = 20 MB
+  since you have 3 servers, then you have to store 60 MB
+
+  30 MB
+
+
 getIDtoPutID:
   map getID to the putID right before the getID
   putID can then go to state log to get the right value
@@ -83,8 +96,9 @@ type KVPaxos struct {
 
   // Your definitions here.
   kpv KeyToPastPutIDToValue
-  getIDtoPutID map[int64]int64
-  keyToCurrPutID map[string]int64
+  getIDtoPutID map[int64]int64 // get reqeust cache
+  // maps the getID to the putID for the given key at the time of the request
+  // after paxos, what's current value for key? 
   doneSeq int
 }
 
@@ -120,9 +134,9 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
     }
   }
   log.Printf("doneSeq: %v server: %v", kv.doneSeq, kv.me)
-  kv.printSeqToState()
-  kv.printStateSize()
-  kv.printState()
+  // kv.printSeqToState()
+  // kv.printStateSize()
+  // kv.printState()
   return nil
 }
 
@@ -158,9 +172,9 @@ func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
     }
   }
   log.Printf("doneSeq: %v server: %v", kv.doneSeq, kv.me)
-  kv.printSeqToState()
-  kv.printStateSize()
-  kv.printState()
+  // kv.printSeqToState()
+  // kv.printStateSize()
+  // kv.printState()
   return nil
 }
 
@@ -201,7 +215,6 @@ func StartServer(servers []string, me int) *KVPaxos {
 
   // Your initialization code here.
   kv.getIDtoPutID = make(map[int64]int64)
-  kv.keyToCurrPutID = make(map[string]int64)
   kv.kpv = MakeKPV()
   kv.doneSeq = -1
 

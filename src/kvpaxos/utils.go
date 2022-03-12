@@ -11,11 +11,11 @@ import (
 func (kv *KVPaxos) updateStateFromSeq(seq int) bool {
 	DB := makeDebugger("updateStateFromSeq", 0, kv.me)
 	DB.printf(1, "doneSeq: ", kv.doneSeq)
-	log.Printf("[updateStateFromSeq] seq: %v", seq)
+	// log.Printf("[updateStateFromSeq] seq: %v", seq)
 
-  defer kv.printSeqToState()
-  defer kv.printStateSize()
-  defer kv.printState()
+  // defer kv.printSeqToState()
+  // defer kv.printStateSize()
+  // defer kv.printState()
 
 	ok, v := kv.px.Status(seq)
 	if !ok {
@@ -95,7 +95,6 @@ func (kv *KVPaxos) findGetCache(key string, getID int64) (GetReply, bool) {
 
 func (kv *KVPaxos) updatePutCacheID(agree *PutAgree) {
 	kv.kpv.insert(agree.Key, agree.PutID, agree.Val)
-	kv.keyToCurrPutID[agree.Key] = agree.PutID
 }
 
 func (kv *KVPaxos) getPutIDBeforeGetID(getID int64) (int64, bool) {
@@ -104,8 +103,7 @@ func (kv *KVPaxos) getPutIDBeforeGetID(getID int64) (int64, bool) {
 }
 
 func (kv *KVPaxos) findPutCache(key string, putID int64) (PutReply, bool) {
-	value := kv.kpv.getValue(key, putID)
-	if value == "" {
+	if !kv.kpv.containsPutID(key, putID) {
 		return PutReply{}, false
 	}
 	prevValue := kv.kpv.getPreValue(key, putID)
@@ -136,7 +134,7 @@ func (kv *KVPaxos) builPaxosPutOp(seq int, args *PutArgs) Op {
 		h := hash(preVal + args.Value)
 		agree.Val = strconv.Itoa(int(h))
 	} else {
-		agree.Val =args.Value
+		agree.Val = args.Value
 	}
 	agree.PutID = args.ID
 
@@ -168,7 +166,8 @@ func (kv *KVPaxos) keyToPutReply(key string, putID int64) PutReply {
 	if kv.kpv.containsPutID(key, putID) {
 		preValue = kv.kpv.getPreValue(key, putID)
 	} else {
-		preValue = kv.kpv.getValue(key, kv.keyToCurrPutID[key])
+		lastPutID, _ := kv.kpv.getLastPutIDVal(key)
+		preValue = kv.kpv.getValue(key, lastPutID)
 	}
 		return kv.buildPutReply(OK, preValue)
 }

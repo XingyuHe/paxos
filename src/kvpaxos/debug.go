@@ -148,6 +148,5 @@ func (kv *KVPaxos) printState() {
 	// size += kv.printKVStore()
 	log.Printf("[printState] kpvSize: %v", kv.kpv.printSize())
 	log.Printf("[printState] getIDtoPutID: %v", len(kv.getIDtoPutID))
-	log.Printf("[printState] keyToCurrPutID: %v", len(kv.keyToCurrPutID))
 	log.Printf("[printState] totalSize: %v", size)
 }

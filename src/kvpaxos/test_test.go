@@ -193,7 +193,7 @@ func TestDone(t *testing.T) {
 
   allowed := m0.Alloc + uint64(nservers * items * sz * 2)
   if m1.Alloc > allowed {
-    t.Fatalf("Memory use did not shrink enough (Used: %v, allowed: %v).\n", m1.Alloc, allowed)
+    t.Fatalf("Memory use did not shrink enough (Used: %v, allowed: %v) allowed change %v.\n", m1.Alloc, allowed, nservers * items * sz * 2)
   }
 
   fmt.Printf("  ... Passed\n")
