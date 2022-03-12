@@ -55,6 +55,7 @@ type PutAgree struct {
   PutID int64
   Key string
   Val string
+  DoHash bool
 }
 
 type GetAgree struct {

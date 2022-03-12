@@ -95,6 +95,10 @@ func (kv *KVPaxos) findGetCache(key string, getID int64) (GetReply, bool) {
 
 func (kv *KVPaxos) updatePutCacheID(agree *PutAgree) {
 	kv.kpv.insert(agree.Key, agree.PutID, agree.Val)
+	if (!agree.DoHash) {
+		prevPutID, _ := kv.kpv.getPrevPutIDValue(agree.Key, agree.PutID)
+		kv.kpv.removeVal(agree.Key, prevPutID)
+	}
 }
 
 func (kv *KVPaxos) getPutIDBeforeGetID(getID int64) (int64, bool) {
@@ -106,7 +110,7 @@ func (kv *KVPaxos) findPutCache(key string, putID int64) (PutReply, bool) {
 	if !kv.kpv.containsPutID(key, putID) {
 		return PutReply{}, false
 	}
-	prevValue := kv.kpv.getPreValue(key, putID)
+	_, prevValue := kv.kpv.getPrevPutIDValue(key, putID)
 	return kv.buildPutReply(OK, prevValue), true
 }
 
@@ -137,6 +141,7 @@ func (kv *KVPaxos) builPaxosPutOp(seq int, args *PutArgs) Op {
 		agree.Val = args.Value
 	}
 	agree.PutID = args.ID
+	agree.DoHash = args.DoHash
 
 	v.Agree = agree
 	return v
@@ -164,7 +169,7 @@ func (kv *KVPaxos) keyToGetReply(key string, lastPutID int64) GetReply {
 func (kv *KVPaxos) keyToPutReply(key string, putID int64) PutReply {
 	var preValue string
 	if kv.kpv.containsPutID(key, putID) {
-		preValue = kv.kpv.getPreValue(key, putID)
+		_, preValue = kv.kpv.getPrevPutIDValue(key, putID)
 	} else {
 		lastPutID, _ := kv.kpv.getLastPutIDVal(key)
 		preValue = kv.kpv.getValue(key, lastPutID)
@@ -222,13 +227,19 @@ func (od *OrderedDict) insert(putID int64, value string) {
   od.mapping[putID] = value
 }
 
-func (od *OrderedDict) getPreValue(putID int64) string {
+func (od *OrderedDict) removeVal(putID int64) {
+	if od.contains(putID) {
+		od.mapping[putID] = ""
+	}
+}
+
+func (od *OrderedDict) getPrevPutIDValue(putID int64) (int64, string) {
   for i := 1; i < len(od.stack); i++ {
     if putID == od.stack[i] {
-      return od.get(od.stack[i - 1])
+      return od.stack[i - 1], od.get(od.stack[i - 1])
     }
   }
-  return ""
+  return 0, ""
 }
 
 func (od *OrderedDict) empty() bool {
@@ -260,6 +271,13 @@ func (kpv *KeyToPastPutIDToValue) insert(key string, putID int64, value string) 
 		kpv.mapping[key] = NewOrderedDict()
 	}
 	kpv.getPutIDToVal(key).insert(putID, value)
+}
+
+func (kpv *KeyToPastPutIDToValue) removeVal(key string, putID int64) {
+	if !kpv.contains(key) {
+		return
+	}
+	kpv.getPutIDToVal(key).removeVal(putID)
 }
 
 
@@ -297,11 +315,12 @@ func (kpv *KeyToPastPutIDToValue) getLastPutIDVal(key string) (int64, string) {
 	}
 }
 
-func (kpv *KeyToPastPutIDToValue) getPreValue(key string, putID int64) string {
+func (kpv *KeyToPastPutIDToValue) getPrevPutIDValue(key string, putID int64) (int64, string) {
 	if !kpv.contains(key) {
-		return ""
+		return 0, ""
 	} else {
-		return kpv.getPutIDToVal(key).getPreValue(putID)
+		putID, val := kpv.getPutIDToVal(key).getPrevPutIDValue(putID)
+		return putID, val
 	}
 }
 
