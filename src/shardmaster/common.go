@@ -1,5 +1,9 @@
 package shardmaster
 
+import (
+	"errors"
+)
+
 //
 // Master shard server: assigns shards to replication groups.
 //
@@ -21,6 +25,8 @@ package shardmaster
 //
 
 const NShards = 10
+
+var ErrPaxosFailed = errors.New("ErrPaxosFailed")
 
 type Config struct {
   Num int // config number
