@@ -45,7 +45,7 @@ func call(srv string, rpcname string,
     return false
   }
   defer c.Close()
-    
+
   err := c.Call(rpcname, args, reply)
   if err == nil {
     return true
@@ -79,6 +79,8 @@ func (ck *Clerk) Get(key string) string {
   defer ck.mu.Unlock()
 
   // You'll have to modify Get().
+  DB := makeDebugger("GetExt", 0, 0, 0)
+  id := genID()
 
   for {
     shard := key2shard(key)
@@ -92,6 +94,8 @@ func (ck *Clerk) Get(key string) string {
       for _, srv := range servers {
         args := &GetArgs{}
         args.Key = key
+        args.ID = id
+        DB.printf(1, "GetArgs: ", args.toString())
         var reply GetReply
         ok := call(srv, "ShardKV.Get", args, &reply)
         if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
@@ -100,6 +104,7 @@ func (ck *Clerk) Get(key string) string {
         if ok && (reply.Err == ErrWrongGroup) {
           break
         }
+        DB.printf(1, ok)
       }
     }
 
@@ -108,7 +113,6 @@ func (ck *Clerk) Get(key string) string {
     // ask master for a new configuration.
     ck.config = ck.sm.Query(-1)
   }
-  return ""
 }
 
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
@@ -116,6 +120,8 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
   defer ck.mu.Unlock()
 
   // You'll have to modify Put().
+  DB := makeDebugger("PutExt", 0, 0, 0)
+  id := genID()
 
   for {
     shard := key2shard(key)
@@ -124,6 +130,7 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 
     servers, ok := ck.config.Groups[gid]
 
+
     if ok {
       // try each server in the shard's replication group.
       for _, srv := range servers {
@@ -131,12 +138,16 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
         args.Key = key
         args.Value = value
         args.DoHash = dohash
+        args.ID = id
+        DB.printf(1, "PutArgs: ", args.toString())
         var reply PutReply
         ok := call(srv, "ShardKV.Put", args, &reply)
         if ok && reply.Err == OK {
+          DB.printf(2, "everything good")
           return reply.PreviousValue
         }
         if ok && (reply.Err == ErrWrongGroup) {
+          DB.printf(3, "ErrWrongGroup")
           break
         }
       }

@@ -44,7 +44,7 @@ func cleanup(sa [][]*ShardKV) {
 
 func setup(tag string, unreliable bool) ([]string, []int64, [][]string, [][]*ShardKV, func()) {
   runtime.GOMAXPROCS(4)
-  
+
   const nmasters = 3
   var sma []*shardmaster.ShardMaster = make([]*shardmaster.ShardMaster, nmasters)
   var smh []string = make([]string, nmasters)
@@ -84,9 +84,11 @@ func TestBasic(t *testing.T) {
   defer clean()
 
   fmt.Printf("Test: Basic Join/Leave ...\n")
+  DB := makeDebugger("TestBasic", 0, 0, 0)
 
   mck := shardmaster.MakeClerk(smh)
   mck.Join(gids[0], ha[0])
+  DB.printf(1, "joined completed, ", mck.Query(-1))
 
   ck := MakeClerk(smh)
 
@@ -107,6 +109,7 @@ func TestBasic(t *testing.T) {
     vals[i] = strconv.Itoa(rand.Int())
     ck.Put(keys[i], vals[i])
   }
+  DB.printf(2, "Passed")
 
   // are keys still there after joins?
   for g := 1; g < len(gids); g++ {
@@ -122,9 +125,11 @@ func TestBasic(t *testing.T) {
       ck.Put(keys[i], vals[i])
     }
   }
-  
+  DB.printf(3, "Passed")
+
   // are keys still there after leaves?
   for g := 0; g < len(gids)-1; g++ {
+    DB.printf(4, "gid: ", gids[g], " leaving")
     mck.Leave(gids[g])
     time.Sleep(1 * time.Second)
     for i := 0; i < len(keys); i++ {
@@ -146,6 +151,7 @@ func TestMove(t *testing.T) {
   defer clean()
 
   fmt.Printf("Test: Shards really move ...\n")
+  DB := makeDebugger("TestMove", 0, 0, 0)
 
   mck := shardmaster.MakeClerk(smh)
   mck.Join(gids[0], ha[0])
@@ -156,22 +162,27 @@ func TestMove(t *testing.T) {
   for i := 0; i < shardmaster.NShards; i++ {
 	  ck.Put(string(rune('0'+i)), string(rune('0'+i)))
   }
+  DB.printf(1, "Passed")
 
   // add group 1.
   mck.Join(gids[1], ha[1])
   time.Sleep(5 * time.Second)
-  
+
   // check that keys are still there.
   for i := 0; i < shardmaster.NShards; i++ {
     if ck.Get(string(rune('0'+i))) != string(rune('0'+i)) {
-      t.Fatalf("missing key/value")
+      t.Fatalf("missing key/value, key: %v", string(rune('0'+i)))
     }
   }
+  DB.printf(2, "Passed")
+
 
   // remove sockets from group 0.
   for i := 0; i < len(ha[0]); i++ {
     os.Remove(ha[0][i])
   }
+
+  DB.printf(3, "Passed")
 
   count := 0
   var mu sync.Mutex
@@ -190,6 +201,9 @@ func TestMove(t *testing.T) {
   }
 
   time.Sleep(10 * time.Second)
+  // 10 / 3 = 3
+  // > 3 of the shards need to work and < 6 of the shards need to fail
+
 
   if count > shardmaster.NShards / 3 && count < 2*(shardmaster.NShards/3) {
     fmt.Printf("  ... Passed\n")
@@ -241,7 +255,7 @@ func TestLimp(t *testing.T) {
       ck.Put(keys[i], vals[i])
     }
   }
-  
+
   // are keys still there after leaves?
   for g := 0; g < len(gids)-1; g++ {
     mck.Leave(gids[g])
