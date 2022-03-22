@@ -41,96 +41,127 @@ func (kv *ShardKV) updateStateFromSeq(seq int) bool {
 			DB.printf(6, "")
 			kv.updatePut(&agree)
 
-		case ConfigAgree:
-			DB.printf(7, "")
-			kv.updateConfig(&agree)
+		case CommitConfigAgree:
+			DB.printf(8, "")
+			kv.updateCommitConfig(&agree)
 
 		case MoveShardAgree:
-			DB.printf(8, "")
+			DB.printf(9, "")
 			kv.updateMoveShards(&agree)
 
 		default:
-			DB.printf(9, "")
+			DB.printf(10, "")
 		}
 		return true
 	}
 }
 
 func (kv *ShardKV) updateMoveShards(agree *MoveShardAgree) {
+	DB := makeDebugger("updateMoveShards", genID(), kv.me, kv.gid)
 	if agree.Num > kv.config.Num {
 		kv.config = shardmaster.Config{Num: kv.config.Num}
 	}
 	// kv.config = shardmaster.Config{Num: kv.config.Num}
-	DB := makeDebugger("updateMoveShards", genID(), kv.me, kv.gid)
 	DB.printf(1, "updated config: ", kv.config.ToString())
 }
 
+func (kv *ShardKV) updateCommitConfig(agree *CommitConfigAgree) {
+	DB := makeDebugger("updateCommitConfig", 0, kv.me, kv.gid)
+	DB.printf(1, agree.toString())
+	kv.kpv.insertKPVDict(agree.NewKPV)
+	kv.config = kv.sm.Query(agree.Num)
+}
 
-func (kv *ShardKV) updateConfig(agree *ConfigAgree) {
-	DB := makeDebugger("updateConfig", agree.ID, kv.me, kv.gid)
+func (kv *ShardKV) updatePrepareConfig(agree *PrepareConfigAgree) {
+	DB := makeDebugger("updatePrepareConfig", agree.ID, kv.me, kv.gid)
+
+	if kv.prepareConfig.Num >= agree.Num {
+		DB.printf(1, "lastest preparing Num is bigger than agree Num")
+		return
+	}
+
 	newConfig := kv.sm.Query(agree.Num)
 	oldConfig := kv.config
-	DB.printf(1, "agreedNum: ", agree.Num, "new config: ", newConfig.ToString())
-	DB.printf(1, "agreedNum: ", agree.Num, "old config: ", kv.config.ToString())
+	kv.prepareConfig = newConfig
+	go kv.handleUpdate(&oldConfig, &newConfig)
+}
+
+func (kv *ShardKV) handleUpdate(oldConfig *shardmaster.Config, newConfig *shardmaster.Config) {
+	DB := makeDebugger("handleUpdate", 0, kv.me, kv.gid)
+	DB.printf(1, "new config: ", newConfig.ToString())
+	DB.printf(1, "old config: ", oldConfig.ToString())
+
+	var movedKPV map[string]OrderedDict
+	movedKPV, _ = kv.callMoveShards(oldConfig, newConfig)
+
+	kv.mu.Lock(); defer kv.mu.Unlock()
 	DB.printf(0, "state before reconfiguration: ", kv.kpv)
 	DB.printf(0, "config before reconfiguration: ", kv.config.ToString())
 	defer DB.printf(6, "state after reconfiguration: ", kv.kpv)
 	defer DB.printf(6, "config after reconfiguration: ", kv.config.ToString())
 
-	if oldConfig.Num >= agree.Num {
-		return
-	}
+	candidateOp := kv.buildPaxosCommitConfigOp(newConfig.Num, movedKPV, map[int64]int64{})
+	DB.printf(7, "candidateOp: ", candidateOp)
+	kv.tryPaxosCommitOpTillUpdated(candidateOp)
+}
+
+func (kv ShardKV) callMoveShards(oldConfig *shardmaster.Config, newConfig *shardmaster.Config) (map[string]OrderedDict, map[int64]int64) {
+
+	DB := makeDebugger("callMoveShards", 0, kv.me, kv.gid)
 
 	// identify new shards that I need to add
 	// identify the keys according to the shards
-	newShards := kv.findNewShards(&oldConfig, &newConfig)
+	newShards := kv.findNewShards(oldConfig, newConfig)
 	oldGIDToNewShards := make(map[int64][]int)
 
 	for _, newShard := range newShards {
-		currGID := kv.config.Shards[newShard]
+		currGID := oldConfig.Shards[newShard]
 		oldGIDToNewShards[currGID] = append(oldGIDToNewShards[currGID], newShard)
 	}
 
 	DB.printf(2, "gidToNewShards: ", oldGIDToNewShards)
-	movingAllOk := true
-	movedKPV := makeKPV()
+	movedKPV := make(map[string]OrderedDict)
+	movedgetIDToPutID := make(map[int64]int64)
 
 	for oldGID, newShard := range oldGIDToNewShards {
 		DB.printf(3, "looking for gid: ", oldGID)
 		movingGidOk := false
-
 
 		servers, ok := oldConfig.Groups[oldGID]
 
 		if !ok {
 			break
 		}
-		args := MoveShardsArgs{Shards: newShard, ID: genID(), Num: agree.Num}
+		args := MoveShardsArgs{Shards: newShard, ID: genID(), Num: newConfig.Num}
 		reply := MoveShardsReply{}
 
-		for _, srv := range servers {
-			DB.printf(4, "calling ShardKV.MoveShards on server: ", srv, ", gid: ", oldGID)
-			ok := call(srv, "ShardKV.MoveShards", &args, &reply)
-			if ok && reply.Err == OK {
-				DB.printf(5, "rpc succeed, reply: ", reply)
-				// kv.kpv.insertKPV(reply.KPV)
-				movedKPV.insertKPVDict(reply.KPV)
-				movingGidOk = true
+		for {
+			for _, srv := range servers {
+				DB.printf(4, "calling ShardKV.MoveShards on server: ", srv, ", gid: ", oldGID)
+				ok := call(srv, "ShardKV.MoveShards", &args, &reply)
+				if ok && reply.Err == OK {
+					DB.printf(5, "rpc succeed, reply: ", reply)
+					// kv.kpv.insertKPV(reply.KPV)
+					for key, od := range reply.KPV {
+						movedKPV[key] = od
+					}
+
+					for getID, putID := range reply.GetIDToPutID {
+						movedgetIDToPutID[getID] = putID
+					}
+
+					movingGidOk = true
+					break
+				}
+				DB.printf(6, "rpc ok: ", ok)
+			}
+			if movingGidOk {
 				break
 			}
-			DB.printf(6, "rpc ok: ", ok)
-		}
-
-		if movingGidOk == false {
-			movingAllOk = false
-			break
 		}
 	}
 
-	if movingAllOk {
-		kv.kpv.insertKPV(&movedKPV)
-		kv.config = newConfig
-	}
+	return movedKPV, movedgetIDToPutID
 }
 
 func (kv *ShardKV) updateGet(agree *GetAgree) {
@@ -150,7 +181,7 @@ func (kv *ShardKV) updateGet(agree *GetAgree) {
 
 func (kv *ShardKV) updatePut(agree *PutAgree) {
 
-	DB := makeDebugger("updatePutCache", agree.PutID, kv.me, kv.gid)
+	DB := makeDebugger("updatePut", agree.PutID, kv.me, kv.gid)
 	DB.printf(1, "")
 
 	if !kv.isKeyInShard(agree.Key) {return}
@@ -178,11 +209,14 @@ func (kv *ShardKV) findGetCache(key string, getID int64) (GetReply, bool) {
 }
 
 func (kv *ShardKV) updatePutCacheID(agree *PutAgree) {
+
 	kv.kpv.insert(agree.Key, agree.PutID, agree.Val)
+
 	if (!agree.DoHash) {
 		prevPutID, _ := kv.kpv.getPrevPutIDValue(agree.Key, agree.PutID)
 		kv.kpv.removeVal(agree.Key, prevPutID)
 	}
+
 	shard := key2shard(agree.Key)
 	kv.shardToKeys[shard] = append(kv.shardToKeys[shard], agree.Key)
 }
@@ -213,6 +247,19 @@ func (kv *ShardKV) fillPutReply(src PutReply, tgt *PutReply) {
 	tgt.PreviousValue = src.PreviousValue
 }
 
+
+func (kv *ShardKV) tryPaxosCommitOpTillUpdated(candidateOp Op) {
+	DB := makeDebugger("tryPaxosCommitOpTillUpdated", candidateOp.OpID, kv.me, kv.gid)
+	commitConfigAgree := candidateOp.Agree.(CommitConfigAgree)
+	for commitConfigAgree.Num > kv.config.Num {
+		if kv.sendOpPaxosLcl(candidateOp) {
+			DB.printf(1, "paxos agreed")
+			return
+		}
+		DB.printf(2, "paxos not agreed")
+	}
+}
+
 func (kv *ShardKV) tryPaxosOpTillSuccess(candidateOp Op) {
 	DB := makeDebugger("sendPaxosOpTillSuccess", candidateOp.OpID, kv.me, kv.gid)
 	for {
@@ -222,6 +269,10 @@ func (kv *ShardKV) tryPaxosOpTillSuccess(candidateOp Op) {
 		}
 		DB.printf(2, "paxos not agreed")
 	}
+}
+
+func (kv *ShardKV) catchupPaxos() {
+	kv.tryPaxosOpTillSuccess(kv.buildPaxosCatchupOp())
 }
 
 // build Op
@@ -238,11 +289,16 @@ func (kv *ShardKV) buildPaxosMoveShardsOp(args *MoveShardsArgs) Op {
 
 	return v
 }
-func (kv *ShardKV) buildPaxosConfigOp(newConfig *shardmaster.Config) Op {
+
+func (kv *ShardKV) buildPaxosCommitConfigOp(num int, newKPV map[string]OrderedDict, newGetIDtoPutID map[int64]int64) Op {
+	return Op{OpID: genID(), Agree: CommitConfigAgree{NewKPV: newKPV, Num: num, NewGetIDtoPutID: newGetIDtoPutID}}
+}
+
+func (kv *ShardKV) buildPaxosPrepareConfigOp(newConfig *shardmaster.Config) Op {
 	v := Op{}
 	v.OpID = genID()
 
-	agree := ConfigAgree{}
+	agree := PrepareConfigAgree{}
 	agree.Num = newConfig.Num
 	agree.ID = v.OpID
 
@@ -288,7 +344,8 @@ func (kv *ShardKV) opToReply(op *Op) interface {} {
 
 	switch agree := op.Agree.(type) {
 	case GetAgree:
-		return kv.keyToGetReply(agree.Key, agree.LastPutID)
+		lastPutID, _ := kv.kpv.getLastPutIDVal(agree.Key)
+		return kv.keyToGetReply(agree.Key, lastPutID)
 	case PutAgree:
 		return kv.keyToPutReply(agree.Key, agree.PutID)
 	case MoveShardAgree:
@@ -304,7 +361,7 @@ func (kv *ShardKV) shardsToMoveShardsReply(shards [] int) MoveShardsReply {
 	DB.printf(1, "shards: ", shards)
 	DB.printf(2, "shardsToKeys: ", kv.shardToKeys)
 
-	ret := MoveShardsReply{Err: OK, KPV: make(map[string]OrderedDict)}
+	ret := MoveShardsReply{Err: OK, KPV: make(map[string]OrderedDict), GetIDToPutID: make(map[int64]int64)}
 
 	for _, shard := range shards {
 		for _, key := range kv.shardToKeys[shard] {
@@ -518,6 +575,10 @@ func equalOp(op1 *Op, op2 *Op) bool {
 
 func equalConfig(config1 *shardmaster.Config, config2 *shardmaster.Config) bool {
 	return config1.Num == config2.Num
+}
+
+func isMoreUpdated(cf1 *shardmaster.Config, cf2 *shardmaster.Config) bool {
+	return cf1.Num > cf2.Num
 }
 
 func genID() int64 {

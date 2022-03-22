@@ -1,14 +1,16 @@
 package shardkv
 
-import "testing"
-import "shardmaster"
-import "runtime"
-import "strconv"
-import "os"
-import "time"
-import "fmt"
-import "sync"
-import "math/rand"
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"runtime"
+	"shardmaster"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+)
 
 func port(tag string, host int) string {
   s := "/var/tmp/824-"
@@ -278,6 +280,7 @@ func TestLimp(t *testing.T) {
 }
 
 func doConcurrent(t *testing.T, unreliable bool) {
+  DB := makeDebugger("doConcurrent", 0, 0, 0)
   smh, gids, ha, _, clean := setup("conc"+strconv.FormatBool(unreliable), unreliable)
   defer clean()
 
@@ -311,8 +314,11 @@ func doConcurrent(t *testing.T, unreliable bool) {
           t.Fatalf("Get(%v) expected %v got %v\n", key, last, v)
         }
 
-        mymck.Move(rand.Int() % shardmaster.NShards,
-          gids[rand.Int() % len(gids)])
+        movedShard := rand.Int() % shardmaster.NShards
+        tgtGID := gids[rand.Int() % len(gids)]
+        mymck.Move(movedShard, tgtGID)
+
+        DB.printf(1, "moving shard ", movedShard, "to GID ", tgtGID)
 
         time.Sleep(time.Duration(rand.Int() % 30) * time.Millisecond)
       }
@@ -322,7 +328,7 @@ func doConcurrent(t *testing.T, unreliable bool) {
   for i := 0; i < npara; i++ {
     x := <- ca[i]
     if x == false {
-      t.Fatalf("something is wrong")
+      t.Fatalf("something is wrong, i=%v", i)
     }
   }
 }

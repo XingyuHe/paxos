@@ -26,6 +26,13 @@ func (kv *ShardKV) MoveShards(args *MoveShardsArgs, reply *MoveShardsReply) erro
 
 	DB := makeDebugger("MoveShards", args.ID, kv.me, kv.gid)
 	DB.printf(1, "MoveArgs: ", args)
+	DB.printf(2, "Incoming Num: ", args.Num, "Local Num: ", kv.config.Num)
+
+	if (args.Num - kv.config.Num > 1) {
+		DB.printf(3, "exiting")
+		go kv.tick()
+		return ErrSourceServerBehind
+	}
 
 	candidateOp := kv.buildPaxosMoveShardsOp(args)
 	paxosOK := kv.sendOpPaxosLcl(candidateOp)
@@ -43,7 +50,7 @@ func (kv *ShardKV) MoveShards(args *MoveShardsArgs, reply *MoveShardsReply) erro
 // shard related ops
 func (kv *ShardKV) isKeyInShard(key string) bool {
 	DB := makeDebugger("isKeyInShard", 0, kv.me, kv.gid)
-	DB.printf(1, "key: ", key, "shard: ", key2shard(key), "tgtGID: ", kv.config.Shards[key2shard(key)])
+	DB.printf(1, "key: ", key, "shard: ", key2shard(key), " tgtGID: ", kv.config.Shards[key2shard(key)], " Num: ", kv.config.Num)
 	// DB.printf(2, "config: ", kv.config.ToString())
 	if kv.config.Num == 0 {
 		return false

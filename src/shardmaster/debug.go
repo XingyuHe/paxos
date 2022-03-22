@@ -2,6 +2,7 @@ package shardmaster
 import (
 	"fmt"
 	"bytes"
+	"strings"
 	// "log"
 )
 
@@ -85,6 +86,25 @@ func (sm *ShardMaster) allConfigToString() string {
 	var ans bytes.Buffer
 	for _, config := range sm.configs {
 		ans.WriteString(fmt.Sprintf("\t%v\n", config))
+	}
+	return ans.String()
+}
+
+func GetCleanName(badServerName string) string {
+	nameList := strings.Split(badServerName, "-")
+	return nameList[len(nameList) - 1]
+}
+
+func (cf *Config) ToString() string {
+	var ans bytes.Buffer
+	ans.WriteString(fmt.Sprintf("\tNum:%v\n", cf.Num))
+	ans.WriteString(fmt.Sprintf("\tShards: %v\n", cf.Shards))
+	for gid, servers := range cf.Groups {
+		ans.WriteString(fmt.Sprintf("\tgid: %v ", gid))
+		for _, srv := range servers {
+			ans.WriteString(fmt.Sprintf("%v, ", GetCleanName(srv)))
+		}
+		ans.WriteString("\n")
 	}
 	return ans.String()
 }

@@ -47,7 +47,9 @@ type ShardKV struct {
 
   doneSeq int
   config shardmaster.Config
+  prepareConfig shardmaster.Config
   shardToKeys map[int][]string
+
 }
 
 func (kv *ShardKV) sendOpPaxosLcl(candidateOp Op) bool {
@@ -56,6 +58,7 @@ func (kv *ShardKV) sendOpPaxosLcl(candidateOp Op) bool {
   kv.px.Start(seq, candidateOp)
   decidedOp := kv.waitForDecision(seq)
   kv.updateStateFromSeq(seq)
+  DB.printf(4, "seq: ", seq)
   if (equalOp(&decidedOp, &candidateOp)) {
     DB.printf(5, "agreed\n\tdecidedOp: ", decidedOp.toString(), "\n\tcandidateOp: ", candidateOp.toString())
     return true
@@ -129,9 +132,10 @@ func (kv *ShardKV) tick() {
     DB.printf(1, "newConfig ", newConfig.ToString())
     DB.printf(1, "oldConfig ", kv.config.ToString())
 
-    candidateOp := kv.buildPaxosConfigOp(&newConfig)
-    kv.tryPaxosOpTillSuccess(candidateOp)
-    DB.printf(2, "candidateOp", candidateOp.toString())
+    prepareConfigAgree := kv.buildPaxosPrepareConfigOp(&newConfig).Agree.(PrepareConfigAgree)
+    kv.updatePrepareConfig(&prepareConfigAgree)
+    // kv.tryPaxosOpTillSuccess(candidateOp)
+    // DB.printf(2, "candidateOp", candidateOp.toString())
   }
 }
 // a potential problem is that a server could very very behind that
@@ -159,11 +163,12 @@ func (kv *ShardKV) kill() {
 func StartServer(gid int64, shardmasters []string,
                  servers []string, me int) *ShardKV {
   gob.Register(Op{})
-  gob.Register(ConfigAgree{})
+  gob.Register(PrepareConfigAgree{})
   gob.Register(GetAgree{})
   gob.Register(PutAgree{})
   gob.Register(MoveShardAgree{})
   gob.Register(OrderedDict{})
+  gob.Register(CommitConfigAgree{})
 
   kv := new(ShardKV)
   kv.me = me
@@ -176,6 +181,7 @@ func StartServer(gid int64, shardmasters []string,
   kv.getIDtoPutID = make(map[int64]int64)
   kv.kpv = makeKPV()
   kv.config = shardmaster.Config{Num: 0}
+  kv.prepareConfig = shardmaster.Config{Num: -1}
   kv.shardToKeys = make(map[int][]string)
 
   DB := makeDebugger("StartServer", 0, me, gid)

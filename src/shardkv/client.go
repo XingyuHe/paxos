@@ -5,6 +5,7 @@ import "net/rpc"
 import "time"
 import "sync"
 import "fmt"
+import "strconv"
 
 type Clerk struct {
   mu sync.Mutex // one RPC at a time
@@ -120,8 +121,9 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
   defer ck.mu.Unlock()
 
   // You'll have to modify Put().
-  DB := makeDebugger("PutExt", 0, 0, 0)
   id := genID()
+  DB := makeDebugger("PutExt", id, 0, 0)
+  DB.printf(1, fmt.Sprintf("key: %v, value: %v, doHash: %v", key, value, dohash))
 
   for {
     shard := key2shard(key)
@@ -130,26 +132,32 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 
     servers, ok := ck.config.Groups[gid]
 
+    DB.gid = gid
+    DB.printf(2, ck.config.ToString())
+
 
     if ok {
       // try each server in the shard's replication group.
       for _, srv := range servers {
+        DB.server, _ = strconv.Atoi(shardmaster.GetCleanName(srv))
         args := &PutArgs{}
         args.Key = key
         args.Value = value
         args.DoHash = dohash
         args.ID = id
-        DB.printf(1, "PutArgs: ", args.toString())
+        DB.printf(3, "PutArgs: ", args.toString())
         var reply PutReply
         ok := call(srv, "ShardKV.Put", args, &reply)
         if ok && reply.Err == OK {
-          DB.printf(2, "everything good")
+          DB.printf(4, "everything good, args: ", args.toString())
+          DB.printf(4, reply.toString())
           return reply.PreviousValue
         }
         if ok && (reply.Err == ErrWrongGroup) {
-          DB.printf(3, "ErrWrongGroup")
+          DB.printf(5, "ErrWrongGroup")
           break
         }
+        DB.printf(6, "server not responding ", ok, reply)
       }
     }
 

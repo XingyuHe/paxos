@@ -20,6 +20,7 @@ const (
   ErrWrongGroup = "ErrWrongGroup"
 )
 var ErrPaxosFailed = errors.New("ErrPaxosFailed")
+var ErrSourceServerBehind = errors.New("ErrSourceServerBehind")
 
 type Err string
 
@@ -58,6 +59,7 @@ type MoveShardsArgs struct {
 type MoveShardsReply struct {
   Err Err
   KPV map[string]OrderedDict
+  GetIDToPutID map[int64]int64
 }
 
 func hash(s string) uint32 {
@@ -91,9 +93,15 @@ type GetAgree struct {
   LastPutID int64
 }
 
-type ConfigAgree struct {
+type PrepareConfigAgree struct {
   ID int64
   Num int
+}
+
+type CommitConfigAgree struct {
+  Num int
+  NewKPV map[string]OrderedDict
+  NewGetIDtoPutID map[int64]int64
 }
 
 type MoveShardAgree struct {

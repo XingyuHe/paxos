@@ -37,13 +37,19 @@ func (op *Op) toString() string {
 		ans.WriteString("PutAgree: ")
 		ans.WriteString(agree.toString())
 
-	case ConfigAgree:
-		ans.WriteString("ConfigAgree: ")
+	case PrepareConfigAgree:
+		ans.WriteString("PrepareConfigAgree: ")
+		ans.WriteString(agree.toString())
+
+	case CommitConfigAgree:
+		ans.WriteString("CommitConfigAgree: ")
 		ans.WriteString(agree.toString())
 
 	case MoveShardAgree:
 		ans.WriteString("MoveShardAgree: ")
 		ans.WriteString(agree.toString())
+
+
 	}
 	return ans.String()
 }
@@ -95,6 +101,17 @@ func (reply *PutReply) toString() string {
 	return ans.String()
 }
 
+func (agree *CommitConfigAgree) toString() string {
+	var ans bytes.Buffer
+	ans.WriteString("Num: ")
+	ans.WriteString(fmt.Sprintf("%v", agree.Num))
+	ans.WriteString(" NewKPVDict")
+	for key, putIDToVal := range agree.NewKPV {
+		ans.WriteString(fmt.Sprintf("\t key: %v, putIDToVal: %v\n", key, putIDToVal))
+	}
+	return ans.String()
+}
+
 func (agree *MoveShardAgree) toString() string {
 	var ans bytes.Buffer
 	ans.WriteString("Shards: ")
@@ -106,7 +123,7 @@ func (agree *MoveShardAgree) toString() string {
 	return ans.String()
 }
 
-func (agree *ConfigAgree) toString() string {
+func (agree *PrepareConfigAgree) toString() string {
 	var ans bytes.Buffer
 	ans.WriteString("Num: ")
 	ans.WriteString(fmt.Sprint(agree.Num))
@@ -139,6 +156,9 @@ func (agree *PutAgree) toString() string {
 	ans.WriteString(", ")
 	ans.WriteString("Val: ")
 	ans.WriteString(fmt.Sprint(agree.Val))
+	ans.WriteString(", ")
+	ans.WriteString("DoHash: ")
+	ans.WriteString(fmt.Sprint(agree.DoHash))
 	return ans.String()
 }
 
