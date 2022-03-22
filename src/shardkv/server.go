@@ -46,10 +46,10 @@ type ShardKV struct {
   getIDtoPutID map[int64]int64
 
   doneSeq int
+
   config shardmaster.Config
   prepareConfig shardmaster.Config
   shardToKeys map[int][]string
-
 }
 
 func (kv *ShardKV) sendOpPaxosLcl(candidateOp Op) bool {
@@ -77,6 +77,8 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
   DB := makeDebugger("Get", args.ID, kv.me, kv.gid)
   DB.printf(1, "GetArgs", args.toString())
 
+  defer DB.printf(6, kv.px.SeqToStateToString())
+
   origReply, ok := kv.findGetCache(args.Key, args.ID)
   if ok {
     kv.fillGetReply(origReply, reply)
@@ -100,6 +102,7 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
 
   DB := makeDebugger("Put", args.ID, kv.me, kv.gid)
   DB.printf(1, "PutArgs:", args.toString())
+  defer DB.printf(6, kv.px.SeqToStateToString())
 
   origReply, ok := kv.findPutCache(args.Key, args.ID)
   if ok {

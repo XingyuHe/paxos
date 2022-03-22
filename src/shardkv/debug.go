@@ -3,8 +3,8 @@ package shardkv
 import (
 	"bytes"
 	"fmt"
-	"log"
-	"unsafe"
+	// "log"
+	// "unsafe"
 )
 
 
@@ -16,7 +16,7 @@ type Debugger struct {
 }
 
 func (DB *Debugger) printf(step int, args ...interface{}) {
-	log.Printf("[%v.%v] ID: %v Server: %v gid: %v %v", DB.fn, step, DB.ID, DB.server, DB.gid, fmt.Sprint(args...))
+	// log.Printf("[%v.%v] ID: %v Server: %v gid: %v %v", DB.fn, step, DB.ID, DB.server, DB.gid, fmt.Sprint(args...))
 	// log.Printf("[%v.%v] ID: %v Server: %v ", DB.fn, step, DB.ID, DB.server)
 }
 
@@ -162,22 +162,12 @@ func (agree *PutAgree) toString() string {
 	return ans.String()
 }
 
-func (kv *ShardKV) printSeqToState() {
-	// DB := makeDebugger("SeqToState", 0, kv.me)
-
-	seqToState := kv.px.GetSeqToState()
-	for seq, _ := range seqToState {
-		log.Printf("\tseq: %v", seq)
+func (kpv *KeyToPastPutIDToValue) toString() string {
+	var ans bytes.Buffer
+	for key, od := range kpv.mapping {
+		ans.WriteString(fmt.Sprintf("\tkey: %v, putIDtoVal: %v\n", key, *od))
 	}
-	log.Printf("\tsize of seqToState %v", len(seqToState))
-	log.Printf("\tMin(): %v", kv.px.Min())
-}
-
-
-func (kv *ShardKV) printStateSize() {
-	log.Printf("size at server %v", kv.me)
-	log.Printf("\tkvStore: %v", unsafe.Sizeof(kv.getIDtoPutID))
-	log.Printf("\tkpv: %v", unsafe.Sizeof(kv.kpv))
+	return ans.String()
 }
 
 func (kpv *KeyToPastPutIDToValue) printSize() string {
@@ -190,14 +180,4 @@ func (kpv *KeyToPastPutIDToValue) printSize() string {
 	}
 	ans.WriteString(fmt.Sprintf("total cnt: %v", total))
 	return ans.String()
-}
-
-func (kv *ShardKV) printState() {
-	var size uintptr
-	// size += kv.printGetCache()
-	// size += kv.printPutCache()
-	// size += kv.printKVStore()
-	log.Printf("[printState] kpvSize: %v", kv.kpv.printSize())
-	log.Printf("[printState] getIDtoPutID: %v", len(kv.getIDtoPutID))
-	log.Printf("[printState] totalSize: %v", size)
 }

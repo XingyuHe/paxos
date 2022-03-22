@@ -69,6 +69,9 @@ func (kv *ShardKV) updateCommitConfig(agree *CommitConfigAgree) {
 	DB := makeDebugger("updateCommitConfig", 0, kv.me, kv.gid)
 	DB.printf(1, agree.toString())
 	kv.kpv.insertKPVDict(agree.NewKPV)
+	for key, _ := range agree.NewKPV {
+		kv.shardToKeys[key2shard(key)] = append(kv.shardToKeys[key2shard(key)], key)
+	}
 	kv.config = kv.sm.Query(agree.Num)
 }
 
@@ -97,7 +100,7 @@ func (kv *ShardKV) handleUpdate(oldConfig *shardmaster.Config, newConfig *shardm
 	kv.mu.Lock(); defer kv.mu.Unlock()
 	DB.printf(0, "state before reconfiguration: ", kv.kpv)
 	DB.printf(0, "config before reconfiguration: ", kv.config.ToString())
-	defer DB.printf(6, "state after reconfiguration: ", kv.kpv)
+	defer DB.printf(6, "state after reconfiguration: ", kv.kpv.toString())
 	defer DB.printf(6, "config after reconfiguration: ", kv.config.ToString())
 
 	candidateOp := kv.buildPaxosCommitConfigOp(newConfig.Num, movedKPV, map[int64]int64{})
