@@ -140,6 +140,8 @@ func TestBfsFindAll1(t *testing.T) {
 
 func TestBfsFindAll2(t *testing.T) {
 	s := base.NewState(0, true, true)
+	// NEW: this test is passed only if isDuplicate parameter is false
+	// s := base.NewState(0, true, false)
 
 	server := NewServer(false, false)
 	s.AddNode("server", server, nil)

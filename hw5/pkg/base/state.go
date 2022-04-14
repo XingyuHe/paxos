@@ -2,6 +2,7 @@ package base
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/fnv"
 	"math/rand"
 )
@@ -77,7 +78,6 @@ func (s *State) GetNode(address Address) Node {
 
 func (s *State) Send(meg Message) {
 	s.Network = append(s.Network, meg)
-	return
 }
 
 func (s *State) Clone() *State {
@@ -184,9 +184,60 @@ func (s *State) isMessageReachable(index int) (bool, *State) {
 	return true, nil
 }
 
+func (s *State) DropOffMessage(index int) (*State) {
+	// CHECKME
+
+	// CHECK: NOT SURE IF INHERIT OR CLONE
+	nState := s.Inherit(DropOffEvent(s.Network[index]))
+	nState.DeleteMessage(index)
+	return nState
+}
+
+func (s *State) HandleDuplicateMessage(index int) (result []*State) {
+	// dupMsg := MakeCoreMessage(origMsg.From(), origMsg.To())
+	// nState needs to have network of length 2 with pingid 1 and 2
+	// nState's counter needs to be 1
+	// we need to call MessageHandler
+	// use receive to send a new message
+
+	handleResult := s.HandleMessage(index, false)
+	for _, state := range handleResult {
+		nState := state.Inherit(HandleDuplicateEvent(s.Network[index]))
+		result = append(result, nState)
+	}
+
+	return result
+}
+
 func (s *State) HandleMessage(index int, deleteMessage bool) (result []*State) {
-	//TODO: implement it
-	panic("implement me")
+	// CHECKME
+
+	// the current state has the new event with the following type\
+	// m is of type Message, use its api
+
+	// return Event{
+	// 	Action:   Handle,
+	// 	Instance: m,
+
+	msg := s.Network[index]
+	to_addr := msg.To()
+	to_node := s.GetNode(to_addr)
+
+
+	newNodes := to_node.MessageHandler(msg)
+
+	for _, nNode := range newNodes {
+		// CHECK: NOT SURE IF INHERIT OR CLONE
+		nState := s.Inherit(HandleEvent(msg))
+		if deleteMessage {
+			nState.DeleteMessage(index)
+		}
+		nState.Receive(nNode.HandlerResponse())
+		nState.UpdateNode(to_addr, nNode)
+		result = append(result, nState)
+	}
+
+	return result
 }
 
 func (s *State) DeleteMessage(index int) {
@@ -228,16 +279,20 @@ func (s *State) NextStates() []*State {
 
 		// TODO: Drop off a message
 		if s.isDropOff {
+			newState := s.DropOffMessage(i)
+			nextStates = append(nextStates, newState)
 		}
 
 		// TODO: Message arrives Normally. (use HandleMessage)
+		newStates := s.HandleMessage(i, true) // CHECK: not sre if it should be true or not
+		nextStates = append(nextStates, newStates...)
 
 		// TODO: Message arrives but the message is duplicated. The same message may come later again
 		// (use HandleMessage)
 		if s.isDuplicate {
-
+			newStates := s.HandleDuplicateMessage(i)
+			nextStates = append(nextStates, newStates...)
 		}
-
 	}
 
 	// You must iterate through the addresses, because every iteration on map is random...
@@ -246,15 +301,29 @@ func (s *State) NextStates() []*State {
 		node := s.nodes[address]
 
 		//TODO: call the timer (use TriggerNodeTimer)
+		newStates := s.TriggerNodeTimer(address, node)
+		nextStates = append(nextStates, newStates...)
 	}
 
 	return nextStates
 }
 
-func (s *State) TriggerNodeTimer(address Address, node Node) []*State {
+func (s *State) TriggerNodeTimer(address Address, node Node) (result []*State) {
 	//TODO: implement it
-	panic("implement me")
 
+	newNodes := node.TriggerTimer()
+
+	for _, nNode := range newNodes {
+		// CHECK: not sure if trigger event is the right event, not sure if nil is the right timer
+		nState := s.Inherit(TriggerEvent(address, nil))
+		nState.UpdateNode(address, nNode)
+		nState.Receive(nNode.HandlerResponse())
+
+		result = append(result, nState)
+	}
+
+
+	return result
 }
 
 func (s *State) RandomNextState() *State {
@@ -282,6 +351,9 @@ func (s *State) RandomNextState() *State {
 	address := timerAddresses[roll-len(s.Network)]
 	node := s.nodes[address]
 
+	// TODO: delete this; only for testing purpose
+	fmt.Printf("node nextTime: %v", node.NextTimer())
+	return s
 }
 
 // Calculate the hash function of a State based on its nodeHash and networkHash.

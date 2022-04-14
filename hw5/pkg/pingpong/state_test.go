@@ -2,6 +2,7 @@ package pingpong
 
 import (
 	"coms4113/hw5/pkg/base"
+	"fmt"
 	"testing"
 )
 
@@ -75,7 +76,7 @@ func TestStateInherit(t *testing.T) {
 	s1.Nodes()["client"].(*Client).SendCommand(s1, PingCommand{
 		To: "server",
 		Id: 1,
-	})
+	}) // add PingCommand to message
 
 	s2 := s1.Inherit(base.HandleEvent(s.Network[0]))
 	s2.HandleMessage(0, true)
@@ -108,13 +109,20 @@ func TestNextStates(t *testing.T) {
 		Id: 1,
 	})
 
-	nextStates := s.NextStates()
 
-	// 6 states: (1) client timer, (2) message drop off, (3) message arrival normally + server handles in a normal mode
+	fmt.Printf("before get next states\n")
+	nextStates := s.NextStates()
+	fmt.Printf("after get next states\n")
+
+	// 6 states:
+	// (1) client timer,
+	// (2) message drop off,
+	// (3) message arrival normally + server handles in a normal mode,
 	// (4) message arrival normally + server handles in a crazy mode,
 	// (5) message arrival with duplicate + server handles in a normal mode
 	// (6) message arrival with duplicate + server handles in a crazy mode
 	if len(nextStates) != 6 {
+		fmt.Printf("fail state count: %v\n", len(nextStates))
 		t.Fail()
 	}
 
@@ -146,15 +154,18 @@ func TestNextStates(t *testing.T) {
 	// verify normal handle
 	normal := func(s *base.State) bool {
 		if len(s.Network) != 1 {
+			fmt.Printf("len of network not right: %v\n", len(s.Network))
 			return false
 		}
 
 		message, ok := s.Network[0].(*PongMessage)
 		if !ok || message.Id != 1 {
+			fmt.Printf("message id not right\n")
 			return false
 		}
 
 		server := s.Nodes()["server"].(*Server)
+		fmt.Printf("this")
 		return server.ServerAttribute.counter == 1
 	}
 	if findIf(nextStates, normal) == -1 {
@@ -165,11 +176,13 @@ func TestNextStates(t *testing.T) {
 	// verify normal handle + crazy
 	crazy := func(s *base.State) bool {
 		if len(s.Network) != 1 {
+			fmt.Printf("[normal + crazy] network len not right: %v\n", len(s.Network))
 			return false
 		}
 
 		message, ok := s.Network[0].(*PongMessage)
 		if !ok || message.Id != 2 {
+			fmt.Printf("[normal + crazy] message id not right\n")
 			return false
 		}
 
@@ -184,16 +197,23 @@ func TestNextStates(t *testing.T) {
 	// verify duplicate handle + crazy mode
 	duplicateCrazy := func(s *base.State) bool {
 		if len(s.Network) != 2 {
+			fmt.Printf("[dup + crazy] network len not right: %v\n", len(s.Network))
 			return false
 		}
 
 		ping, ok := s.Network[0].(*PingMessage)
 		if !ok || ping.Id != 1 {
+			fmt.Printf("[dup + crazy] 0 id does not match: %v\n", ping.Id)
 			return false
 		}
 
 		pong, ok := s.Network[1].(*PongMessage)
 		if !ok || pong.Id != 2 {
+			if ok {
+				fmt.Printf("[dup + crazy] 1 id does not match: %v\n", pong.Id)
+			} else {
+				fmt.Printf("[dup + crazy] pong not found \n")
+			}
 			return false
 		}
 

@@ -259,7 +259,7 @@ func TestBasic(t *testing.T) {
     ck.Join(int64(npara+1+i), []string{"a","b","c"})
   }
   c2 := ck.Query(-1)
-  for i := int64(1); i <= npara; i++ {
+  for i := int64(1); i < npara + 1024; i++ {
     for j := 0; j < len(c1.Shards); j++ {
       if c2.Shards[j] == i {
         if c1.Shards[j] != i {
