@@ -2,7 +2,7 @@ package base
 
 import (
 	"encoding/binary"
-	"fmt"
+	// "fmt"
 	"hash/fnv"
 	"math/rand"
 )
@@ -193,22 +193,6 @@ func (s *State) DropOffMessage(index int) (*State) {
 	return nState
 }
 
-func (s *State) HandleDuplicateMessage(index int) (result []*State) {
-	// dupMsg := MakeCoreMessage(origMsg.From(), origMsg.To())
-	// nState needs to have network of length 2 with pingid 1 and 2
-	// nState's counter needs to be 1
-	// we need to call MessageHandler
-	// use receive to send a new message
-
-	handleResult := s.HandleMessage(index, false)
-	for _, state := range handleResult {
-		nState := state.Inherit(HandleDuplicateEvent(s.Network[index]))
-		result = append(result, nState)
-	}
-
-	return result
-}
-
 func (s *State) HandleMessage(index int, deleteMessage bool) (result []*State) {
 	// CHECKME
 
@@ -232,7 +216,7 @@ func (s *State) HandleMessage(index int, deleteMessage bool) (result []*State) {
 		if deleteMessage {
 			nState.DeleteMessage(index)
 		}
-		nState.Receive(nNode.HandlerResponse())
+		// nState.Receive(nNode.HandlerResponse())
 		nState.UpdateNode(to_addr, nNode)
 		result = append(result, nState)
 	}
@@ -290,7 +274,7 @@ func (s *State) NextStates() []*State {
 		// TODO: Message arrives but the message is duplicated. The same message may come later again
 		// (use HandleMessage)
 		if s.isDuplicate {
-			newStates := s.HandleDuplicateMessage(i)
+			newStates := s.HandleMessage(i, false)
 			nextStates = append(nextStates, newStates...)
 		}
 	}
@@ -317,13 +301,16 @@ func (s *State) TriggerNodeTimer(address Address, node Node) (result []*State) {
 		// CHECK: not sure if trigger event is the right event, not sure if nil is the right timer
 		nState := s.Inherit(TriggerEvent(address, nil))
 		nState.UpdateNode(address, nNode)
-		nState.Receive(nNode.HandlerResponse())
-
 		result = append(result, nState)
 	}
 
 
 	return result
+}
+
+func randChoice(states []*State) *State {
+	roll := rand.Intn(len(states))
+	return states[roll]
 }
 
 func (s *State) RandomNextState() *State {
@@ -335,7 +322,8 @@ func (s *State) RandomNextState() *State {
 		timerAddresses = append(timerAddresses, addr)
 	}
 
-	roll := rand.Intn(len(s.Network) + len(timerAddresses))
+	rollRange := len(s.Network) + len(timerAddresses)
+	roll := rand.Intn(rollRange)
 
 	if roll < len(s.Network) {
 		// check Network Partition
@@ -344,16 +332,33 @@ func (s *State) RandomNextState() *State {
 			return newState
 		}
 
+		if s.isLocalCall(roll) {
+			newStates := s.HandleMessage(roll, true);
+			return randChoice(newStates)
+		}
+
+		nextStates := make([]*State, 0)
+		if s.isDropOff {
+			nextStates = append(nextStates, s.DropOffMessage(roll));
+		}
+
 		//TODO: handle message and return one state
+		newStates := s.HandleMessage(roll, true)
+		nextStates = append(nextStates, newStates...)
+
+		if s.isDuplicate {
+			newStates := s.HandleMessage(roll, false)
+			nextStates = append(nextStates, newStates...)
+		}
+
+		return randChoice(nextStates)
 	}
+
 
 	// TODO: trigger timer and return one state
 	address := timerAddresses[roll-len(s.Network)]
-	node := s.nodes[address]
-
-	// TODO: delete this; only for testing purpose
-	fmt.Printf("node nextTime: %v", node.NextTimer())
-	return s
+	triggerNewStates := s.TriggerNodeTimer(address, s.nodes[address])
+	return randChoice(triggerNewStates)
 }
 
 // Calculate the hash function of a State based on its nodeHash and networkHash.
