@@ -2,6 +2,7 @@ package paxos
 
 import (
 	"coms4113/hw5/pkg/base"
+	"fmt"
 )
 
 const (
@@ -68,13 +69,44 @@ func NewServer(peers []base.Address, me int, proposedValue interface{}) *Server 
 
 func (server *Server) MessageHandler(message base.Message) []base.Node {
 	//TODO: implement it
-	panic("implement me")
+	nextServers := make([]base.Node, 0)
+	switch msg := message.(type) {
+	case *ProposeRequest:
+		newServer := server.prepareHandler(msg)
+		nextServers = append(nextServers, newServer)
+
+	case *AcceptRequest:
+		newServer := server.acceptHandler(msg)
+		nextServers = append(nextServers, newServer)
+
+	case *DecideRequest:
+		newServer := server.decideHandler(msg)
+		nextServers = append(nextServers, newServer)
+
+	case *ProposeResponse:
+		newServers := server.handleProposerResponse(msg)
+		for _, nServer := range newServers {
+			nextServers = append(nextServers, nServer)
+		}
+	case *AcceptResponse:
+		newServers := server.handleAcceptResponse(msg)
+		for _, nServer := range newServers {
+			nextServers = append(nextServers, nServer)
+		}
+
+	case *DecideResponse:
+	}
+
+	return nextServers
 }
 
 // To start a new round of Paxos.
 func (server *Server) StartPropose() {
 	//TODO: implement it
-	panic("implement me")
+	proposerResponse := make([]bool, len(server.peers))
+	proposer := buildProposer(1, Propose, server.peers[server.me], 0, 0, proposerResponse, 1, server.peers[server.me])
+	server.updateProposer(proposer)
+	server.startPropose()
 }
 
 // Returns a deep copy of server node
@@ -147,6 +179,7 @@ func (server *Server) Equals(other base.Node) bool {
 	if !ok || server.me != otherServer.me ||
 		server.n_p != otherServer.n_p || server.n_a != otherServer.n_a || server.v_a != otherServer.v_a ||
 		(server.timeout == nil) != (otherServer.timeout == nil) {
+			fmt.Printf("[Equals] server struct do not match\n")
 		return false
 	}
 
@@ -155,11 +188,13 @@ func (server *Server) Equals(other base.Node) bool {
 		server.proposer.InitialValue != otherServer.proposer.InitialValue ||
 		server.proposer.SuccessCount != otherServer.proposer.SuccessCount ||
 		server.proposer.ResponseCount != otherServer.proposer.ResponseCount {
+			fmt.Printf("[Equals] proposer struct do not match\n")
 		return false
 	}
 
 	for i, response := range server.proposer.Responses {
 		if response != otherServer.proposer.Responses[i] {
+			fmt.Printf("[Equals] proposer response do not match, i: %v\n", i)
 			return false
 		}
 	}

@@ -93,6 +93,8 @@ func TestUnit(t *testing.T) {
 	}
 
 	if !compareMessages(servers[0].Response, expectedMessages) {
+		fmt.Printf("server response: %v \n", servers[0].Response)
+		fmt.Printf("expected response: %v \n", expectedMessages)
 		t.Fatalf("response messages do not match\n")
 	}
 
