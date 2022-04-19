@@ -72,6 +72,7 @@ type AcceptResponse struct {
 	base.CoreMessage
 	Ok  bool
 	N_p int
+	V interface {}
 
 	SessionId int
 }

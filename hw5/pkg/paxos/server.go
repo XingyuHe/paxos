@@ -104,7 +104,18 @@ func (server *Server) MessageHandler(message base.Message) []base.Node {
 func (server *Server) StartPropose() {
 	//TODO: implement it
 	proposerResponse := make([]bool, len(server.peers))
-	proposer := buildProposer(1, Propose, server.peers[server.me], 0, 0, proposerResponse, 1, server.peers[server.me])
+	// proposer := buildProposer(1, Propose, server.getAddress(), 0, 0, proposerResponse, 1, server.getAddress())
+
+	proposer := Proposer{
+			N:             server.n_p,
+			Phase:         Propose,
+			V:             server.proposer.InitialValue,
+			SuccessCount:  0,
+			ResponseCount: 0,
+			Responses:     proposerResponse,
+			SessionId:     server.proposer.SessionId + 1,
+			InitialValue:  server.proposer.InitialValue,
+	}
 	server.updateProposer(proposer)
 	server.startPropose()
 }

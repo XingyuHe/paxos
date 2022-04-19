@@ -271,10 +271,13 @@ func consensusState() *base.State {
 
 func invariantValidate(state *base.State) bool {
 	flag, v := globalAgreedValue(state)
+	fmt.Printf("[invariantValidate] flag: %v, v: %v\n", flag, v)
 	if flag == -1 {
 		return false
 	}
 	if flag == 1 && v != "v3" {
+		_, path := base.FindPath(state)
+		base.PrintPath(path)
 		return false
 	}
 
@@ -283,6 +286,7 @@ func invariantValidate(state *base.State) bool {
 		if server.v_a != nil && server.v_a != "v3" {
 			_, path := base.FindPath(state)
 			base.PrintPath(path)
+			fmt.Printf("[invariantValidate] server: %v flag: %v, v: %v\n", server.me, flag, server.v_a)
 			return false
 		}
 	}
@@ -291,6 +295,7 @@ func invariantValidate(state *base.State) bool {
 }
 
 // Once it reaches consensus, it should never change.
+// TODO: failed
 func TestInvariant(t *testing.T) {
 	s := consensusState()
 	result := base.BfsFindAll(s, invariantValidate, nil, 7)
