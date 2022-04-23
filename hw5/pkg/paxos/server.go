@@ -72,15 +72,15 @@ func (server *Server) MessageHandler(message base.Message) []base.Node {
 	nextServers := make([]base.Node, 0)
 	switch msg := message.(type) {
 	case *ProposeRequest:
-		newServer := server.prepareHandler(msg)
+		newServer := server.handlePrepareRequest(msg)
 		nextServers = append(nextServers, newServer)
 
 	case *AcceptRequest:
-		newServer := server.acceptHandler(msg)
+		newServer := server.handleAcceptRequest(msg)
 		nextServers = append(nextServers, newServer)
 
 	case *DecideRequest:
-		newServer := server.decideHandler(msg)
+		newServer := server.handleDecideRequest(msg)
 		nextServers = append(nextServers, newServer)
 
 	case *ProposeResponse:
@@ -103,11 +103,16 @@ func (server *Server) MessageHandler(message base.Message) []base.Node {
 // To start a new round of Paxos.
 func (server *Server) StartPropose() {
 	//TODO: implement it
+	DB := base.MakeDebugger("StartPropose", server.me)
 	proposerResponse := make([]bool, len(server.peers))
+	for i, _ := range proposerResponse {
+		proposerResponse[i] = false
+	}
 	// proposer := buildProposer(1, Propose, server.getAddress(), 0, 0, proposerResponse, 1, server.getAddress())
 
 	proposer := Proposer{
-			N:             server.n_p,
+			N:             server.n_p + 1,
+			N_a_max: 		0,
 			Phase:         Propose,
 			V:             server.proposer.InitialValue,
 			SuccessCount:  0,
@@ -116,9 +121,11 @@ func (server *Server) StartPropose() {
 			SessionId:     server.proposer.SessionId + 1,
 			InitialValue:  server.proposer.InitialValue,
 	}
-	server.updateProposer(proposer)
-	server.startPropose()
+	server.proposer = proposer
+	DB.Printf(1, "initial value ", server.proposer.InitialValue)
+	server.setProposalResponse()
 }
+
 
 // Returns a deep copy of server node
 func (server *Server) copy() *Server {
@@ -200,6 +207,8 @@ func (server *Server) Equals(other base.Node) bool {
 		server.proposer.SuccessCount != otherServer.proposer.SuccessCount ||
 		server.proposer.ResponseCount != otherServer.proposer.ResponseCount {
 			fmt.Printf("[Equals] proposer struct do not match\n")
+			fmt.Printf("%v \n", server.proposer)
+			fmt.Printf("%v \n", otherServer.proposer)
 		return false
 	}
 

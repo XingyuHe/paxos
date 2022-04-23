@@ -47,6 +47,7 @@ func BfsFind(initState *State, validate, goalPredicate func(*State) bool, limitD
 	for queue.Len() > 0 {
 		v := queue.Remove(queue.Front())
 		state := v.(*State)
+
 		result.N++
 
 		if goalPredicate(state) {
@@ -57,6 +58,8 @@ func BfsFind(initState *State, validate, goalPredicate func(*State) bool, limitD
 
 		// No need to add more states into the queue if the depth is too large
 		if limitDepth >= 0 && state.Depth == limitDepth {
+			_, path := FindPath(state)
+			PrintPath(path)
 			continue
 		}
 
@@ -73,6 +76,9 @@ func BfsFind(initState *State, validate, goalPredicate func(*State) bool, limitD
 
 			explored.add(newState)
 			queue.PushBack(newState)
+
+			_, path := FindPath(newState)
+			PrintPath(path)
 		}
 	}
 
@@ -246,8 +252,10 @@ func reversePath(path []StateEdge) {
 }
 
 func PrintPath(path []StateEdge) {
+	fmt.Println()
 	for _, edge := range path {
 		instanceClass := reflect.TypeOf(edge.Event.Instance)
 		fmt.Printf("Event: %s %s %v\n", edge.Event.Action, instanceClass, edge.Event.Instance)
 	}
+	fmt.Println()
 }

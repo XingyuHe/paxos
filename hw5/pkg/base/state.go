@@ -2,6 +2,7 @@ package base
 
 import (
 	"encoding/binary"
+	"fmt"
 	// "fmt"
 	"hash/fnv"
 	"math/rand"
@@ -244,11 +245,15 @@ func (s *State) Receive(messages []Message) {
 }
 
 func (s *State) NextStates() []*State {
+	DB := MakeDebugger("NextStates", -1)
+	DB.Printf(0, "NextStatesCalled")
 	nextStates := make([]*State, 0, 4)
 
 	for i := range s.Network {
 		// check if it is a local call
+		DB.Printf(-1, "handle message ", fmt.Sprintf(" %T ", s.Network[i]), s.Network[i])
 		if s.isLocalCall(i) {
+			DB.Printf(1, "local call")
 			newStates := s.HandleMessage(i, true)
 			nextStates = append(nextStates, newStates...)
 			continue
@@ -257,23 +262,27 @@ func (s *State) NextStates() []*State {
 		// check Network Partition
 		reachable, newState := s.isMessageReachable(i)
 		if !reachable {
+			DB.Printf(2, "message not reachable")
 			nextStates = append(nextStates, newState)
 			continue
 		}
 
 		// TODO: Drop off a message
 		if s.isDropOff {
+			DB.Printf(3, "drop off an message")
 			newState := s.DropOffMessage(i)
 			nextStates = append(nextStates, newState)
 		}
 
 		// TODO: Message arrives Normally. (use HandleMessage)
+		DB.Printf(4, "handle message")
 		newStates := s.HandleMessage(i, true) // CHECK: not sre if it should be true or not
 		nextStates = append(nextStates, newStates...)
 
 		// TODO: Message arrives but the message is duplicated. The same message may come later again
 		// (use HandleMessage)
 		if s.isDuplicate {
+			DB.Printf(5, "handle duplicate message")
 			newStates := s.HandleMessage(i, false)
 			nextStates = append(nextStates, newStates...)
 		}
@@ -285,6 +294,7 @@ func (s *State) NextStates() []*State {
 		node := s.nodes[address]
 
 		//TODO: call the timer (use TriggerNodeTimer)
+		DB.Printf(6, "trigger time")
 		newStates := s.TriggerNodeTimer(address, node)
 		nextStates = append(nextStates, newStates...)
 	}

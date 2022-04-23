@@ -2,7 +2,7 @@ package paxos
 
 import (
 	"coms4113/hw5/pkg/base"
-	"fmt"
+	"log"
 	"testing"
 )
 
@@ -225,8 +225,8 @@ func TestBfs3(t *testing.T) {
 		return
 	}
 
-	fmt.Printf("Number of Explored States: %d\n", result.N)
-	fmt.Printf("Number of Success State: %d\n", len(result.Targets))
+	log.Printf("Number of Explored States: %d\n", result.N)
+	log.Printf("Number of Success State: %d\n", len(result.Targets))
 
 	maxDepth := 0
 	var target *base.State
@@ -244,7 +244,7 @@ func TestBfs3(t *testing.T) {
 		return
 	}
 
-	fmt.Printf("Depth of Targets State: %d\n", target.Depth)
+	log.Printf("Depth of Targets State: %d\n", target.Depth)
 	_, path := base.FindPath(target)
 	base.PrintPath(path)
 }
@@ -271,7 +271,7 @@ func consensusState() *base.State {
 
 func invariantValidate(state *base.State) bool {
 	flag, v := globalAgreedValue(state)
-	fmt.Printf("[invariantValidate] flag: %v, v: %v\n", flag, v)
+	log.Printf("[invariantValidate] flag: %v, v: %v\n", flag, v)
 	if flag == -1 {
 		return false
 	}
@@ -286,7 +286,7 @@ func invariantValidate(state *base.State) bool {
 		if server.v_a != nil && server.v_a != "v3" {
 			_, path := base.FindPath(state)
 			base.PrintPath(path)
-			fmt.Printf("[invariantValidate] server: %v flag: %v, v: %v\n", server.me, flag, server.v_a)
+			log.Printf("[invariantValidate] server: %v flag: %v, v: %v\n", server.me, flag, server.v_a)
 			return false
 		}
 	}
@@ -302,7 +302,7 @@ func TestInvariant(t *testing.T) {
 	if !result.Success {
 		t.Fatal("consensus has been broken")
 	}
-	fmt.Printf("Number of Explored States: %d\n", result.N)
+	log.Printf("Number of Explored States: %d\n", result.N)
 
 	s = consensusState()
 	result = base.BatchRandomWalkValidate(s, invariantValidate, nil, 100, 5000)
@@ -364,8 +364,8 @@ func TestPartition1(t *testing.T) {
 		t.Fail()
 		return
 	}
-	fmt.Printf("Number of Explored States: %d\n", result.N)
-	fmt.Printf("Depth of Targets State: %d\n", result.Targets[0].Depth)
+	log.Printf("Number of Explored States: %d\n", result.N)
+	log.Printf("Depth of Targets State: %d\n", result.Targets[0].Depth)
 
 	_, path := base.FindPath(result.Targets[0])
 	base.PrintPath(path)
@@ -381,6 +381,8 @@ func reachState(start *base.State,
 		res := base.BfsFind(s, validate, check, s.Depth+depthLimit)
 		if !res.Success {
 			return nil
+		} else {
+			log.Printf("[reachState] states reached \n \t%v", *res.Targets[0])
 		}
 		s = res.Targets[0]
 	}
@@ -393,37 +395,62 @@ func reachState(start *base.State,
 func checksForPartition2() []func(s *base.State) bool {
 	p1PreparePhase := func(s *base.State) bool {
 		s1 := s.Nodes()["s1"].(*Server)
+		if (s1.proposer.Phase == Propose) {
+			log.Println("[check] s1 reached propose phase")
+		}
 		return s1.proposer.Phase == Propose
 	}
 
 	p1AcceptPhase := func(s *base.State) bool {
 		s1 := s.Nodes()["s1"].(*Server)
+		if (s1.proposer.Phase == Accept) {
+			log.Println("[check] reached accept phase")
+		}
 		return s1.proposer.Phase == Accept
 	}
 
 	s1KnowConsensus := func(s *base.State) bool {
 		s1 := s.Nodes()["s1"].(*Server)
+		if (s1.agreedValue == "v1") {
+			log.Printf("[check] reached agreed value\n")
+		} else {
+			log.Printf("[check] wrong agreed value %v\n", s1.agreedValue)
+		}
 		return s1.agreedValue == "v1"
 	}
 
 	p3PreparePhase := func(s *base.State) bool {
 		s3 := s.Nodes()["s3"].(*Server)
+		if (s3.proposer.Phase == Propose) {
+			log.Println("[check] s3 reached propose phase")
+		}
 		return s3.proposer.Phase == Propose
 	}
 
 	p3PrepareAgain := func(s *base.State) bool {
 		s2 := s.Nodes()["s2"].(*Server)
 		s3 := s.Nodes()["s3"].(*Server)
+		if (s3.proposer.Phase == Propose && s3.proposer.N > s2.n_p) {
+			log.Println("[check] s3 prepared again")
+		}
 		return s3.proposer.Phase == Propose && s3.proposer.N > s2.n_p
 	}
 
 	p3AcceptPhase := func(s *base.State) bool {
 		s3 := s.Nodes()["s3"].(*Server)
+		if (s3.proposer.Phase == Accept) {
+			log.Println("[check] s3 reached accept phase")
+		}
 		return s3.proposer.Phase == Accept
 	}
 
 	s3KnowConsensus := func(s *base.State) bool {
 		s3 := s.Nodes()["s3"].(*Server)
+		if (s3.agreedValue == "v1") {
+			log.Printf("[check] s3 reached agreed value\n")
+		} else {
+			log.Printf("[check] s3 wrong agreed value %v\n", s3.agreedValue)
+		}
 		return s3.agreedValue == "v1"
 	}
 
@@ -448,7 +475,12 @@ func TestPartition2(t *testing.T) {
 	s.AddNode(peers[2], server, []base.Address{"s1"})
 
 	s = reachState(s, checksForPartition2(), 5)
+
+
 	if s == nil {
+		log.Printf("[TestPartition2] this is the event path\n")
+
+
 		t.Fatal("cannot find a path where S1 reaches consensus first and S3 agrees on the same value, while S1 and" +
 			"S3 are isolated")
 	}
@@ -467,6 +499,7 @@ func checksForCase5Failures() []func(s *base.State) bool {
 		m, ok := event.Instance.(*AcceptResponse)
 		return ok && !m.Ok && m.From() == "s2" && m.To() == "s1"
 	})
+
 
 	checks = append(checks, ToConsensusCase5()...)
 
@@ -525,7 +558,11 @@ func s1GetAllAcceptRejects(s *base.State) bool {
 		return false
 	}
 	server := s.Nodes()["s1"].(*Server)
-	return server.proposer.Phase == Accept && server.proposer.ResponseCount == 3 && server.proposer.SuccessCount == 0
+	valid := server.proposer.Phase == Accept && server.proposer.ResponseCount == 3 && server.proposer.SuccessCount == 0
+	if valid {
+		log.Printf("... s1GetAllAcceptRejects")
+	}
+	return valid
 }
 
 func s3GetAllAcceptRejects(s *base.State) bool {
@@ -533,7 +570,11 @@ func s3GetAllAcceptRejects(s *base.State) bool {
 		return false
 	}
 	server := s.Nodes()["s3"].(*Server)
-	return server.proposer.Phase == Accept && server.proposer.ResponseCount == 3 && server.proposer.SuccessCount == 0
+	valid := server.proposer.Phase == Accept && server.proposer.ResponseCount == 3 && server.proposer.SuccessCount == 0
+	if valid {
+		log.Printf("... s3GetAllAcceptRejects")
+	}
+	return valid
 }
 
 // Guide the program to (1) reject all the Accept requests from S1, (2) reject all the Accept requests from S3, and
@@ -584,7 +625,7 @@ func concurrentProposerChecks() []func(s *base.State) bool {
 		s1 := s.Nodes()["s1"].(*Server)
 		valid := s1.proposer.Phase == Accept && s1.proposer.ResponseCount == 3 && s1.proposer.SuccessCount == 0
 		if valid {
-			fmt.Println("... p1 received rejects from all peers during Accept phase")
+			log.Println("... p1 received rejects from all peers during Accept phase")
 		}
 		return valid
 	}
@@ -595,7 +636,7 @@ func concurrentProposerChecks() []func(s *base.State) bool {
 		s3 := s.Nodes()["s3"].(*Server)
 		valid := s1.agreedValue == "v3" && s2.agreedValue == "v3" && s3.agreedValue == "v3"
 		if valid {
-			fmt.Println("... all peers agreed on v3")
+			log.Println("... all peers agreed on v3")
 		}
 		return valid
 	}
@@ -609,7 +650,7 @@ func concurrentProposerChecks() []func(s *base.State) bool {
 
 // https://docs.google.com/presentation/d/1ESICVkGl0zNY-95bTCGoJhbcYeiKGUQAuepUaITvJhg/edit#slide=id.g9f0e2b3fae_0_180
 func TestConcurrentProposer(t *testing.T) {
-	fmt.Printf("Test: Concurrent proposers...\n")
+	log.Printf("Test: Concurrent proposers...\n")
 	peers := []base.Address{"s1", "s2", "s3"}
 	s := base.NewState(0, false, false)
 	server := NewServer(peers, 0, "v1")
@@ -624,13 +665,13 @@ func TestConcurrentProposer(t *testing.T) {
 	if nil == reachState(s, concurrentProposerChecks(), 5) {
 		t.Fatal("cannot find a path where we reach consensus on v3")
 	}
-	fmt.Printf("... Passed\n")
+	log.Printf("... Passed\n")
 }
 
 // https://docs.google.com/presentation/d/1ESICVkGl0zNY-95bTCGoJhbcYeiKGUQAuepUaITvJhg/edit#slide=id.g9f109140a1_1_8
 // Reference code for implementing predicates, not graded.
 func TestFailChecks(t *testing.T) {
-	fmt.Printf("Test: Decides fail ...\n")
+	log.Printf("Test: Decides fail ...\n")
 	peers := []base.Address{"s1", "s2", "s3"}
 	s := base.NewState(0, false, false)
 	server := NewServer(peers, 0, "v1")
@@ -645,7 +686,7 @@ func TestFailChecks(t *testing.T) {
 	if nil == reachState(s, decidesFailChecks(), 5) {
 		t.Fatal("cannot find a path where we reach consensus on v1")
 	}
-	fmt.Printf("... Passed\n")
+	log.Printf("... Passed\n")
 }
 
 func decidesFailChecks() []func(s *base.State) bool {
@@ -653,7 +694,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 		s1 := s.Nodes()["s1"].(*Server)
 		valid := s1.proposer.Phase == Propose
 		if valid {
-			fmt.Println("... p1 entered Propose phase")
+			log.Println("... p1 entered Propose phase")
 		}
 		return valid
 	}
@@ -673,7 +714,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 			}
 		}
 		if valid {
-			fmt.Println("... p1 entered Accept phase with proposed value v1")
+			log.Println("... p1 entered Accept phase with proposed value v1")
 		}
 		return valid
 	}
@@ -693,7 +734,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 			}
 		}
 		if valid {
-			fmt.Println("... p1 entered Decide phase with proposed value v1")
+			log.Println("... p1 entered Decide phase with proposed value v1")
 		}
 		return valid
 	}
@@ -701,7 +742,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 		s3 := s.Nodes()["s3"].(*Server)
 		valid := s3.proposer.Phase == Propose && s3.proposer.V == "v2"
 		if valid {
-			fmt.Println("... p3 entered Propose phase with proposed value v2")
+			log.Println("... p3 entered Propose phase with proposed value v2")
 		}
 		return valid
 	}
@@ -721,7 +762,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 			}
 		}
 		if valid {
-			fmt.Println("... p3 entered Accept phase with proposed value v1")
+			log.Println("... p3 entered Accept phase with proposed value v1")
 		}
 		return valid
 	}
@@ -741,7 +782,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 			}
 		}
 		if valid {
-			fmt.Println("... p3 entered Decide phase with proposed value v1")
+			log.Println("... p3 entered Decide phase with proposed value v1")
 		}
 		return valid
 	}
@@ -751,7 +792,7 @@ func decidesFailChecks() []func(s *base.State) bool {
 		s3 := s.Nodes()["s3"].(*Server)
 		valid := s1.agreedValue == "v1" && s2.agreedValue == "v1" && s3.agreedValue == "v1"
 		if valid {
-			fmt.Println("... all peers agreed on v1")
+			log.Println("... all peers agreed on v1")
 		}
 		return valid
 	}
