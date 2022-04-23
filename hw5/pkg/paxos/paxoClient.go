@@ -50,9 +50,11 @@ func (server *Server) handleAcceptResponse(response *AcceptResponse) []*Server {
 		}
 
 		newDecideServer.SetResponse(requestMsg)
+		newDecideServer.agreedValue = newDecideServer.proposer.V
 
 		nextServers = append(nextServers, baseNewServer)
 		nextServers = append(nextServers, newDecideServer)
+
 	} else {
 		nextServers = append(nextServers, baseNewServer)
 	}

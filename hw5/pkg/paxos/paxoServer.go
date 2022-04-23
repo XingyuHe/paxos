@@ -48,6 +48,7 @@ func (server *Server) handleAcceptRequest(args *AcceptRequest) *Server {
 
 	var response AcceptResponse
 	response.CoreMessage = base.MakeCoreMessage(args.To(), args.From())
+	response.N_p = server.n_p
 	response.SessionId = args.SessionId
 
 	if (args.N >= server.n_p) {
@@ -67,7 +68,6 @@ func (server *Server) handleAcceptRequest(args *AcceptRequest) *Server {
 		response.Ok = false
 	}
 
-	response.N_p = server.n_p
 	newServer.SetSingleResponse(&response)
 	return newServer
 }
